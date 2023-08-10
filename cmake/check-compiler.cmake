@@ -1,0 +1,17 @@
+include(CheckCXXCompilerFlag)
+
+message(STATUS "Compiler")
+message(STATUS ">> ID      : ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS ">> Version : ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS ">> Path    : ${CMAKE_CXX_COMPILER}")
+
+if(MSVC)
+   check_cxx_compiler_flag(/std:c++17 cxx_17)
+   check_cxx_compiler_flag(/W4 high_warning_level)
+elseif(${CMAKE_CXX_COMPILER_ID} MATCHES Clang)
+   check_cxx_compiler_flag(-std=c++17 cxx_17)
+   check_cxx_compiler_flag(-Wall high_warning_level)
+elseif(${CMAKE_CXX_COMPILER_ID} MATCHES GNU)
+   check_cxx_compiler_flag(-std=gnu++17 cxx_17)
+   check_cxx_compiler_flag(-Wextra high_warning_level)
+endif()
