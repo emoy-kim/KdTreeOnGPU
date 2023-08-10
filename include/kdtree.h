@@ -33,30 +33,25 @@ private:
    int NodeNum;
    std::shared_ptr<KdtreeNode> Root;
 
-   [[nodiscard]] static T compareSuperKey(const T* a, const T* b, int p)
+   [[nodiscard]] static T compareSuperKey(const T* a, const T* b, int axis)
    {
-      T difference = static_cast<T>(0);
+      constexpr T zero = static_cast<T>(0);
+      T difference = zero;
       for (int i = 0; i < dim; ++i) {
-          int r = i + p;
-          r = (r < dim) ? r : r - dim; // A fast alternative to the modulus operator for (i + p) < 2 * dim.
-          difference = a[r] - b[r];
-          if (difference != static_cast<T>(0)) break;
+         int r = i + axis;
+         r = (r < dim) ? r : r - dim; // A fast alternative to the modulus operator for (i + axis) < 2 * dim.
+         difference = a[r] - b[r];
+         if (difference != zero) break;
       }
       return difference;
    }
    [[nodiscard]] int verify(KdtreeNode* node, int depth) const;
    [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
-   static void sort(
-      std::vector<const T*>& reference,
-      std::vector<const T*>& temporary,
-      int low,
-      int high,
-      int partition
-   );
+   static void sort(std::vector<const T*>& reference, std::vector<const T*>& buffer, int low, int high, int axis);
    static int removeDuplicates(std::vector<const T*>& reference, int leading_dim_for_super_key);
    static std::shared_ptr<KdtreeNode> build(
       std::vector<std::vector<const T*>>& references,
-      std::vector<const T*>& temporary,
+      std::vector<const T*>& buffer,
       int start,
       int end,
       int depth
