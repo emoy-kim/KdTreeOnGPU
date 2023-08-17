@@ -28,29 +28,297 @@ void Kdtree<T, dim>::sort(std::vector<const T*>& reference, std::vector<const T*
 }
 
 template<typename T, int dim>
-int Kdtree<T, dim>::removeDuplicates(std::vector<const T*>& reference, int leading_dim_for_super_key)
+void Kdtree<T, dim>::sortReferenceAscending(
+   const T** reference,
+   const T** buffer,
+   int low,
+   int high,
+   int axis,
+   int max_submit_depth,
+   int depth
+)
+{
+   if (high - low > InsertionSortThreshold) {
+      const int mid = low + (high - low) / 2;
+
+      // Is a child thread available to subdivide the lower half of the reference array?
+      if (max_submit_depth < 0 || max_submit_depth < depth) {
+
+         // No, recursively subdivide the lower/upper halves of the reference array with the current thread
+         sortBufferAscending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
+         sortBufferDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+
+         // Compare the results in the buffer in ascending order and merge them into the reference array in ascending order.
+         for (int i = low, j = high, k = low; k <= high; ++k) {
+            reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) < 0 ? buffer[i++] : buffer[j--];
+         }
+      }
+      else {
+         // Yes, a child thread is available, so recursively subdivide the lower half of the reference array
+         // with a child thread and return the result in the buffer in ascending order.
+         auto sort_future = std::async(
+            std::launch::async, sortBufferAscending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+         );
+
+         // And simultaneously, recursively subdivide the upper half of the reference array with the current thread
+         // and return the result in the buffer in descending order.
+         sortBufferDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+
+         // Wait for the child thread to finish execution.
+         try { sort_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with sort future in sortReferenceAscending()\n" );
+         }
+
+         // Compare the results in buffer in ascending order with a child thread
+         // and merge them into the lower half of the reference array in ascending order.
+         auto merge_future = std::async(
+            std::launch::async,
+            [&]
+            {
+               for (int i = low, j = high, k = low; k <= mid; ++k) {
+                  reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) <= 0 ? buffer[i++] : buffer[j--];
+               }
+            }
+         );
+
+         // And simultaneously compare the results in the buffer in descending order with the current thread
+         // and merge them into the upper half of the reference array in ascending order.
+         for (int i = mid, j = mid + 1, k = high; k > mid; --k) {
+            reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) > 0 ? buffer[i--] : buffer[j++];
+         }
+
+         // Wait for the child thread to finish execution.
+         try { merge_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with merge future in sortReferenceAscending()\n" );
+         }
+      }
+   }
+   else {
+      // sort in ascending order and leaves the result in the reference array.
+      for (int i = low + 1; i <= high; ++i) {
+         int j;
+         const T* t = reference[i];
+         for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) > 0; --j) reference[j] = reference[j - 1];
+         reference[j] = t;
+      }
+   }
+}
+
+template<typename T, int dim>
+void Kdtree<T, dim>::sortReferenceDescending(
+   const T** reference,
+   const T** buffer,
+   int low,
+   int high,
+   int axis,
+   int max_submit_depth,
+   int depth
+)
+{
+   if (high - low > InsertionSortThreshold) {
+      const int mid = low + (high - low) / 2;
+      if (max_submit_depth < 0 || max_submit_depth < depth) {
+         sortBufferDescending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
+         sortBufferAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         for (int i = low, j = high, k = low; k <= high; ++k) {
+            reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) > 0 ? buffer[i++] : buffer[j--];
+         }
+      }
+      else {
+         auto sort_future = std::async(
+            std::launch::async, sortBufferDescending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+         );
+
+         sortBufferAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+
+         try { sort_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with sort future in sortReferenceDescending()\n" );
+         }
+
+         auto merge_future = std::async(
+            std::launch::async,
+            [&]
+            {
+               for (int i = low, j = high, k = low; k <= mid; ++k) {
+                  reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) >= 0 ? buffer[i++] : buffer[j--];
+               }
+            }
+         );
+
+         for (int i = mid, j = mid + 1, k = high; k > mid; --k) {
+            reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) < 0 ? buffer[i--] : buffer[j++];
+         }
+
+         try { merge_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with merge future in sortReferenceDescending()\n" );
+         }
+      }
+   }
+   else {
+      for (int i = low + 1; i <= high; ++i) {
+         int j;
+         const T* t = reference[i];
+         for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) < 0; --j) reference[j] = reference[j - 1];
+         reference[j] = t;
+      }
+   }
+}
+
+template<typename T, int dim>
+void Kdtree<T, dim>::sortBufferAscending(
+   const T** reference,
+   const T** buffer,
+   int low,
+   int high,
+   int axis,
+   int max_submit_depth,
+   int depth
+)
+{
+   if (high - low > InsertionSortThreshold) {
+      const int mid = low + (high - low) / 2;
+      if (max_submit_depth < 0 || max_submit_depth < depth) {
+         sortReferenceAscending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
+         sortReferenceDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         for (int i = low, j = high, k = low; k <= high; ++k) {
+            buffer[k] = compareSuperKey( reference[i], reference[j], axis ) < 0 ? reference[i++] : reference[j--];
+         }
+      }
+      else {
+         auto sort_future = std::async(
+            std::launch::async, sortReferenceAscending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+         );
+
+         sortReferenceDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+
+         try { sort_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with sort future in sortBufferAscending()\n" );
+         }
+
+         auto merge_future = std::async(
+            std::launch::async,
+            [&]
+            {
+               for (int i = low, j = high, k = low; k <= mid; ++k) {
+                  buffer[k] = compareSuperKey( reference[i], reference[j], axis ) <= 0 ? reference[i++] : reference[j--];
+               }
+            }
+         );
+
+         for (int i = mid, j = mid + 1, k = high; k > mid; --k) {
+            buffer[k] = compareSuperKey( reference[i], reference[j], axis ) > 0 ? reference[i--] : reference[j++];
+         }
+
+         try { merge_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with merge future in sortBufferAscending()\n" );
+         }
+      }
+   }
+   else {
+      int i, j;
+      buffer[high] = reference[high];
+      for (j = high - 1; j >= low; --j) {
+         for (i = j; i < high; ++i) {
+            if (compareSuperKey( reference[j], reference[i + 1], axis ) > 0) buffer[i] = buffer[i + 1];
+            else break;
+         }
+         buffer[i] = reference[j];
+      }
+   }
+}
+
+template<typename T, int dim>
+void Kdtree<T, dim>::sortBufferDescending(
+   const T** reference,
+   const T** buffer,
+   int low,
+   int high,
+   int axis,
+   int max_submit_depth,
+   int depth
+)
+{
+   if (high - low > InsertionSortThreshold) {
+      const int mid = low + (high - low) / 2;
+      if (max_submit_depth < 0 || max_submit_depth < depth) {
+         sortReferenceDescending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
+         sortReferenceAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         for (int i = low, j = high, k = low; k <= high; ++k) {
+            buffer[k] = compareSuperKey( reference[i], reference[j], axis ) > 0 ? reference[i++] : reference[j--];
+         }
+      }
+      else {
+         auto sort_future = std::async(
+            std::launch::async, sortReferenceDescending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+         );
+
+         sortReferenceAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+
+         try { sort_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with sort future in sortBufferDescending()\n" );
+         }
+
+         auto merge_future = std::async(
+            std::launch::async,
+            [&]
+            {
+               for (int i = low, j = high, k = low; k <= mid; ++k) {
+                  buffer[k] = compareSuperKey( reference[i], reference[j], axis ) >= 0 ? reference[i++] : reference[j--];
+               }
+            }
+         );
+
+         for (int i = mid, j = mid + 1, k = high; k > mid; --k) {
+            buffer[k] = compareSuperKey( reference[i], reference[j], axis ) < 0 ? reference[i--] : reference[j++];
+         }
+
+         try { merge_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with merge future in sortBufferDescending()\n" );
+         }
+      }
+   }
+   else {
+      int i, j;
+      buffer[high] = reference[high];
+      for (j = high - 1; j >= low; --j) {
+         for (i = j; i < high; ++i) {
+            if (compareSuperKey( reference[j], reference[i + 1], axis ) < 0) buffer[i] = buffer[i + 1];
+            else break;
+         }
+         buffer[i] = reference[j];
+      }
+   }
+}
+
+template<typename T, int dim>
+int Kdtree<T, dim>::removeDuplicates(const T** reference, int leading_dim_for_super_key, int size)
 {
    int end = 0;
-   const auto size = static_cast<int>(reference.size());
 	for (int j = 1; j < size; ++j) {
-      const T compare = compareSuperKey( reference[j], reference[j - 1], leading_dim_for_super_key );
+      const T compare = compareSuperKey( reference[j], reference[end], leading_dim_for_super_key );
       if (compare < 0) {
-         std::cout << "sort failure: compareSuperKey( reference[" << j << "], reference[" << j - 1 << "], ("
+         std::ostringstream buffer;
+         buffer << "sort failure: compareSuperKey( reference[" << j << "], reference[" << j - 1 << "], ("
             << leading_dim_for_super_key << ") = " << compare  << "\n";
-		   std::exit( 1 );
+		   throw std::runtime_error( buffer.str() );
       }
       else if (compare > 0) reference[++end] = reference[j];
+      else delete [] reference[j];
 	}
 	return end;
 }
 
-/*
- * This function builds a k-d tree by recursively partitioning the reference arrays and adding kdNodes to the tree.
- * These arrays are permuted cyclically for successive levels of the tree in order that sorting occur on x, y, z, w...
- */
 template<typename T, int dim>
 std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
-   std::vector<std::vector<const T*>>& references,
+   const T*** references,
    std::vector<const T*>& buffer,
    int start,
    int end,
@@ -190,30 +458,45 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, int depth) const
 }
 
 template<typename T, int dim>
-void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
+void Kdtree<T, dim>::create(std::vector<const T*>& coordinates, int max_submit_depth)
 {
-   std::vector<const T*> buffer(coordinates.size());
-   std::vector<std::vector<const T*>> references(dim, std::vector<const T*>(coordinates.size()));
-   for (int i = 0; i < dim; ++i) {
-      references[i] = coordinates;
-      sort( references[i], buffer, 0, static_cast<int>(references[i].size() - 1), i );
+   const T*** references = new T**[dim + 1];
+   references[0] = coordinates.data();
+   const auto size = static_cast<int>(coordinates.size());
+   for (int i = 1; i <= dim; ++i) references[i] = new T*[size];
+
+
+   auto start_time = std::chrono::system_clock::now();
+   sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, max_submit_depth, 0 );
+   auto end_time = std::chrono::system_clock::now();
+   const auto sort_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
+
+   start_time = std::chrono::system_clock::now();
+   const int end = removeDuplicates( references[0], 0, size );
+   end_time = std::chrono::system_clock::now();
+   const auto remove_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
+
+   start_time = std::chrono::system_clock::now();
+   int max_depth = 1, s = size;
+   while (s > 0) {
+      max_depth++;
+      s >>= 1;
    }
 
-   // Remove references to duplicate coordinates via one pass through each reference array.
-   std::vector<int> end;
-   for (int i = 0; i < dim; ++i) end.emplace_back( removeDuplicates( references[i], i ) );
+   std::vector<int> indices(dim + 2);
+   for (int i = 0; i <= dim; ++i) indices[i] = i;
 
-   // Check that the same number of references was removed from each reference array.
-   for (int i = 0; i < dim - 1; ++i) {
-      for (int j = i + 1; j < dim; ++j) {
-         if (end[i] != end[j]) {
-            std::cout << "reference removal error\n";
-            std::exit( 1 );
-         }
-      }
+   std::vector<std::vector<int>> permutation(max_depth, std::vector<int>(dim + 2));
+   for (size_t i = 0; i < permutation.size(); ++i) {
+      indices[dim + 1] = i % dim;
+      std::swap( indices[0], indices[dim] );
+      permutation[i] = indices;
+      std::swap( indices[dim - 1], indices[dim] );
    }
 
    Root = build( references, buffer, 0, end[0], 0 );
+   end_time = std::chrono::system_clock::now();
+   const auto build_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
 
    NodeNum = verify( Root.get(), 0 );
    std::cout << "\n>> Number of nodes = " << NodeNum << "\n";

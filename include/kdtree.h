@@ -19,7 +19,7 @@ public:
 
    explicit Kdtree(const std::vector<TVec>& vertices);
 
-   void create(std::vector<const T*>& coordinates);
+   void create(std::vector<const T*>& coordinates, int max_submit_depth);
    void print() const
    {
       if (Root != nullptr) print( Root.get(), 0 );
@@ -30,27 +30,63 @@ public:
    }
 
 private:
+   inline static constexpr int InsertionSortThreshold = 15;
+
    int NodeNum;
    std::shared_ptr<KdtreeNode> Root;
 
-   [[nodiscard]] static T compareSuperKey(const T* a, const T* b, int axis)
+   [[nodiscard]] static T compareSuperKey(const T* const a, const T* const b, int axis)
    {
-      constexpr T zero = static_cast<T>(0);
-      T difference = zero;
-      for (int i = 0; i < dim; ++i) {
+      T difference = a[axis] - b[axis];
+      for (int i = 1; difference == 0 && i < dim; ++i) {
          int r = i + axis;
          r = (r < dim) ? r : r - dim; // A fast alternative to the modulus operator for (i + axis) < 2 * dim.
          difference = a[r] - b[r];
-         if (difference != zero) break;
       }
       return difference;
    }
    [[nodiscard]] int verify(KdtreeNode* node, int depth) const;
    [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
    static void sort(std::vector<const T*>& reference, std::vector<const T*>& buffer, int low, int high, int axis);
-   static int removeDuplicates(std::vector<const T*>& reference, int leading_dim_for_super_key);
+   static void sortReferenceAscending(
+      const T** reference,
+      const T** buffer,
+      int low,
+      int high,
+      int axis,
+      int max_submit_depth,
+      int depth
+   );
+   static void sortReferenceDescending(
+      const T** reference,
+      const T** buffer,
+      int low,
+      int high,
+      int axis,
+      int max_submit_depth,
+      int depth
+   );
+   static void sortBufferAscending(
+      const T** reference,
+      const T** buffer,
+      int low,
+      int high,
+      int axis,
+      int max_submit_depth,
+      int depth
+   );
+   static void sortBufferDescending(
+      const T** reference,
+      const T** buffer,
+      int low,
+      int high,
+      int axis,
+      int max_submit_depth,
+      int depth
+   );
+   static int removeDuplicates(const T** reference, int leading_dim_for_super_key, int size);
    static std::shared_ptr<KdtreeNode> build(
-      std::vector<std::vector<const T*>>& references,
+      const T*** references,
       std::vector<const T*>& buffer,
       int start,
       int end,
