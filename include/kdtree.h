@@ -10,16 +10,16 @@ public:
 
    struct KdtreeNode
    {
-      const T* Tuple;
+      T* const Tuple;
       std::shared_ptr<KdtreeNode> LeftChild;
       std::shared_ptr<KdtreeNode> RightChild;
 
-      explicit KdtreeNode(const T* tuple) : Tuple( tuple ) {}
+      explicit KdtreeNode(T* const tuple) : Tuple( tuple ) {}
    };
 
-   explicit Kdtree(const std::vector<TVec>& vertices);
+   explicit Kdtree(std::vector<TVec>& vertices, int thread_num = 4);
 
-   void create(std::vector<const T*>& coordinates, int max_submit_depth);
+   void create(std::vector<T*>& coordinates);
    void print() const
    {
       if (Root != nullptr) print( Root.get(), 0 );
@@ -33,6 +33,8 @@ private:
    inline static constexpr int InsertionSortThreshold = 15;
 
    int NodeNum;
+   int MaxThreadNum;
+   int MaxSubmitDepth;
    std::shared_ptr<KdtreeNode> Root;
 
    [[nodiscard]] static T compareSuperKey(const T* const a, const T* const b, int axis)
@@ -40,17 +42,22 @@ private:
       T difference = a[axis] - b[axis];
       for (int i = 1; difference == 0 && i < dim; ++i) {
          int r = i + axis;
-         r = (r < dim) ? r : r - dim; // A fast alternative to the modulus operator for (i + axis) < 2 * dim.
+         r = r < dim ? r : r - dim; // A fast alternative to the modulus operator for (i + axis) < 2 * dim.
          difference = a[r] - b[r];
       }
       return difference;
    }
-   [[nodiscard]] int verify(KdtreeNode* node, int depth) const;
+   [[nodiscard]] int verify(
+      KdtreeNode* node,
+      const std::vector<int>& permutation,
+      int max_submit_depth,
+      int depth
+   ) const;
    [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
-   static void sort(std::vector<const T*>& reference, std::vector<const T*>& buffer, int low, int high, int axis);
+   void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
-      const T** reference,
-      const T** buffer,
+      T** const reference,
+      T** const buffer,
       int low,
       int high,
       int axis,
@@ -58,8 +65,8 @@ private:
       int depth
    );
    static void sortReferenceDescending(
-      const T** reference,
-      const T** buffer,
+      T** const reference,
+      T** const buffer,
       int low,
       int high,
       int axis,
@@ -67,8 +74,8 @@ private:
       int depth
    );
    static void sortBufferAscending(
-      const T** reference,
-      const T** buffer,
+      T** const reference,
+      T** const buffer,
       int low,
       int high,
       int axis,
@@ -76,22 +83,24 @@ private:
       int depth
    );
    static void sortBufferDescending(
-      const T** reference,
-      const T** buffer,
+      T** const reference,
+      T** const buffer,
       int low,
       int high,
       int axis,
       int max_submit_depth,
       int depth
    );
-   static int removeDuplicates(const T** reference, int leading_dim_for_super_key, int size);
+   static int removeDuplicates(T** const reference, int leading_dim_for_super_key, int size);
    static std::shared_ptr<KdtreeNode> build(
-      const T*** references,
-      std::vector<const T*>& buffer,
+      T*** const references,
+      const std::vector<std::vector<int>>& permutation,
       int start,
       int end,
+      int max_submit_depth,
       int depth
    );
+   static void createPermutation(std::vector<int>& permutation, int coordinates_num);
    void print(KdtreeNode* node, int depth) const;
 };
 

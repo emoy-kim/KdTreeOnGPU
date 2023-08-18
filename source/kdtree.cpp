@@ -1,36 +1,48 @@
 #include "kdtree.h"
 
 template<typename T, int dim>
-Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices) : NodeNum( 0 )
+Kdtree<T, dim>::Kdtree(std::vector<TVec>& vertices, int thread_num) :
+   NodeNum( 0 ), MaxThreadNum( 0 ), MaxSubmitDepth( -1 )
 {
-   std::vector<const T*> coordinates;
+   std::vector<T*> coordinates;
    coordinates.reserve( vertices.size() );
-   for (const auto& v : vertices) coordinates.emplace_back( glm::value_ptr( v ) );
+   for (auto& v : vertices) coordinates.emplace_back( glm::value_ptr( v ) );
 
+   prepareMultiThreading( thread_num );
    create( coordinates );
 }
 
 template<typename T, int dim>
-void Kdtree<T, dim>::sort(std::vector<const T*>& reference, std::vector<const T*>& buffer, int low, int high, int axis)
+void Kdtree<T, dim>::prepareMultiThreading(int thread_num)
 {
-   if (low < high) {
-      const int mid = low + (high - low) / 2;
-      sort( reference, buffer, low, mid, axis );
-      sort( reference, buffer, mid + 1, high, axis );
-
-      int i, j;
-      for (i = mid + 1; i > low; --i) buffer[i - 1] = reference[i - 1];
-      for (j = mid; j < high; ++j) buffer[mid + high - j] = reference[j + 1];
-      for (int k = low; k <= high; ++k) {
-         reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) < 0 ? buffer[i++] : buffer[j--];
+   // Calculate the number of child threads to be the number of threads minus 1,
+   // then calculate the maximum tree depth at which to launch a child thread.
+   // Truncate this depth such that the total number of threads, including the master thread, is an integer power of 2,
+   // hence simplifying the launching of child threads by restricting them to only the < branch of the tree for some
+   // depth in the tree.
+   int n = 0;
+   if (thread_num > 0) {
+      while (thread_num > 0) {
+         ++n;
+         thread_num >>= 1;
       }
+      thread_num = 1 << (n - 1);
    }
+   else thread_num = 0;
+
+   if (thread_num < 2) MaxSubmitDepth = -1; // The sentinel value -1 specifies no child threads.
+   else if (thread_num == 2) MaxSubmitDepth = 0;
+   else {
+      MaxSubmitDepth = static_cast<int>(std::floor( std::log( static_cast<double>(thread_num - 1)) / std::log( 2.0 ) ));
+   }
+   MaxThreadNum = thread_num;
+   std::cout << " >> Max number of threads = " << MaxThreadNum << "\n >> Max submit depth = " << MaxSubmitDepth << "\n\n";
 }
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortReferenceAscending(
-   const T** reference,
-   const T** buffer,
+   T** const reference,
+   T** const buffer,
    int low,
    int high,
    int axis,
@@ -99,7 +111,7 @@ void Kdtree<T, dim>::sortReferenceAscending(
       // sort in ascending order and leaves the result in the reference array.
       for (int i = low + 1; i <= high; ++i) {
          int j;
-         const T* t = reference[i];
+         T* const t = reference[i];
          for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) > 0; --j) reference[j] = reference[j - 1];
          reference[j] = t;
       }
@@ -108,8 +120,8 @@ void Kdtree<T, dim>::sortReferenceAscending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortReferenceDescending(
-   const T** reference,
-   const T** buffer,
+   T** const reference,
+   T** const buffer,
    int low,
    int high,
    int axis,
@@ -161,7 +173,7 @@ void Kdtree<T, dim>::sortReferenceDescending(
    else {
       for (int i = low + 1; i <= high; ++i) {
          int j;
-         const T* t = reference[i];
+         T* const t = reference[i];
          for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) < 0; --j) reference[j] = reference[j - 1];
          reference[j] = t;
       }
@@ -170,8 +182,8 @@ void Kdtree<T, dim>::sortReferenceDescending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortBufferAscending(
-   const T** reference,
-   const T** buffer,
+   T** const reference,
+   T** const buffer,
    int low,
    int high,
    int axis,
@@ -235,8 +247,8 @@ void Kdtree<T, dim>::sortBufferAscending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortBufferDescending(
-   const T** reference,
-   const T** buffer,
+   T** const reference,
+   T** const buffer,
    int low,
    int high,
    int axis,
@@ -299,7 +311,7 @@ void Kdtree<T, dim>::sortBufferDescending(
 }
 
 template<typename T, int dim>
-int Kdtree<T, dim>::removeDuplicates(const T** reference, int leading_dim_for_super_key, int size)
+int Kdtree<T, dim>::removeDuplicates(T** const reference, int leading_dim_for_super_key, int size)
 {
    int end = 0;
 	for (int j = 1; j < size; ++j) {
@@ -318,33 +330,38 @@ int Kdtree<T, dim>::removeDuplicates(const T** reference, int leading_dim_for_su
 
 template<typename T, int dim>
 std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
-   const T*** references,
-   std::vector<const T*>& buffer,
+   T*** const references,
+   const std::vector<std::vector<int>>& permutation,
    int start,
    int end,
+   int max_submit_depth,
    int depth
 )
 {
    std::shared_ptr<KdtreeNode> node;
 
-	// The axis permutes as x, y, z, w... and addresses the referenced data.
-   int axis = depth % dim;
+   // The partition permutes as x, y, z, w... and specifies the most significant key.
+   const int axis = permutation[depth][permutation[0].size() - 1];
+
+   // Obtain the reference array that corresponds to the most significant key.
+   T** const reference = references[permutation[depth][dim]];
+
    if (end == start) {
       // Only one reference was passed to this function, so add it to the tree.
-      node = std::make_shared<KdtreeNode>( references[0][end] );
+      node = std::make_shared<KdtreeNode>( reference[end] );
    }
    else if (end == start + 1) {
       // Two references were passed to this function in sorted order, so store the start element at this level of
       // the tree and store the end element as the > child.
-      node = std::make_shared<KdtreeNode>( references[0][start] );
-      node->RightChild = std::make_shared<KdtreeNode>( references[0][end] );
+      node = std::make_shared<KdtreeNode>( reference[start] );
+      node->RightChild = std::make_shared<KdtreeNode>( reference[end] );
    }
    else if (end == start + 2) {
       // Three references were passed to this function in sorted order, so store the median element at this level of
       // the tree, store the start element as the < child and store the end element as the > child.
-      node = std::make_shared<KdtreeNode>( references[0][start + 1] );
-      node->LeftChild = std::make_shared<KdtreeNode>( references[0][start] );
-      node->RightChild = std::make_shared<KdtreeNode>( references[0][end] );
+      node = std::make_shared<KdtreeNode>( reference[start + 1] );
+      node->LeftChild = std::make_shared<KdtreeNode>( reference[start] );
+      node->RightChild = std::make_shared<KdtreeNode>( reference[end] );
 	}
    else if (end > start + 2) {
       // More than three references were passed to this function, so the median element of references[0] is chosen
@@ -353,128 +370,275 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
       const int median = start + (end - start) / 2;
 
       // Store the median element of references[0] in a new kdNode.
-      node = std::make_shared<KdtreeNode>( references[0][median] );
+      node = std::make_shared<KdtreeNode>( reference[median] );
 
-      // Copy references[0] to the temporary array before partitioning.
-      for (int i = start; i <= end; ++i) buffer[i] = references[0][i];
+      // Build both branches with child threads at as many levels of the tree as possible.
+      // Create the child threads as high in the tree as possible.
+      // Are child threads available to build both branches of the tree?
+      if (max_submit_depth < 0 || max_submit_depth < depth) {
+         // No, child threads are not available, so one thread will be used.
+         // Initialize start_index = 1 so that the 'for' loop that partitions the reference arrays will partition
+         // a number of arrays equal to dim.
+         int start_index = 1;
 
-      // Process each of the other reference arrays in a priori sorted order and partition it by comparing super keys.
-      // Store the result from references[i] in references[i-1], thus permuting the reference arrays.
-      // Skip the element of references[i] that that references a point that equals the point that is stored
-      // in the new k-d node.
-      int lower, upper, lowerSave, upperSave;
-      for (int i = 1; i < dim; ++i) {
-         // Process one reference array. Compare once only.
-         lower = start - 1;
-         upper = median;
-         for (int j = start; j <= end; ++j) {
-            T compare = compareSuperKey( references[i][j], node->Tuple, axis );
-            if (compare < 0) references[i - 1][++lower] = references[i][j];
-            else if (compare > 0) references[i - 1][++upper] = references[i][j];
-         }
+         // If depth < dim - 1, copy references[permut[dim]] to references[permut[0]] where permut is the permutation
+         // vector for this level of the tree.
+         // Sort the two halves of references[permut[0]] with p + 1 as the most significant key of the super key.
+         // Use as the temporary array references[permut[1]] because that array is not used for partitioning.
+         // Partition a number of reference arrays equal to the tree depth because those reference arrays are already sorted.
+         if (depth < dim - 1) {
+            start_index = dim - depth;
+            T** const target = references[permutation[depth][0]];
+            T** const buffer = references[permutation[depth][1]];
+            for (int i = start; i <= end; ++i) target[i] = reference[i];
 
-         // Check the new indices for the reference array.
-         if (lower < start || lower >= median) {
-            std::cout << "incorrect range for lower at depth = " << depth << " : start = " << start <<
-               "  lower = " << lower << "  median = " << median << "\n";
-            std::exit( 1 );
-         }
-         if (upper <= median || upper > end) {
-            std::cout << "incorrect range for upper at depth = " << depth << " : median = " << median <<
-               "  upper = " << upper << "  end = " << end << "\n";
-            std::exit( 1 );
-         }
-         if (i > 1 && lower != lowerSave) {
-            std::cout << " lower = " << lower << "  !=  lowerSave = " << lowerSave << "\n";
-            std::exit( 1 );
-         }
-         if (i > 1 && upper != upperSave) {
-            std::cout << " upper = " << upper << "  !=  upperSave = " << upperSave << "\n";
-            std::exit( 1 );
+            // Sort the lower half of references[permut[0]] with the current thread.
+            sortReferenceAscending( target, buffer, start, median - 1, axis + 1, max_submit_depth, depth );
+            // Sort the upper half of references[permut[0]] with the current thread.
+            sortReferenceAscending( target, buffer, median + 1, end, axis + 1, max_submit_depth, depth );
          }
 
-         lowerSave = lower;
-         upperSave = upper;
+         // Partition the reference arrays specified by 'startIndex' in a priori sorted order by comparing super keys.
+         // Store the result from references[permut[i]]] in references[permut[i - 1]] where permut is the permutation
+         // vector for this level of the tree, thus permuting the reference arrays.
+         // Skip the element of references[permut[i]] that equals the tuple that is stored in the new KdNode.
+         T* const tuple = node->Tuple;
+         for (int i = start_index; i < dim; ++i) {
+            // Specify the source and destination reference arrays.
+            T** const src = references[permutation[depth][i]];
+            T** const dst = references[permutation[depth][i - 1]];
+
+            // Fill the lower and upper halves of one reference array
+            // in ascending order with the current thread.
+            for (int j = start, lower = start - 1, upper = median; j <= end; ++j) {
+               T* const src_j = src[j];
+               const T compare = compareSuperKey( src_j, tuple, axis );
+               if (compare < 0) dst[++lower] = src_j;
+               else if (compare > 0) dst[++upper] = src_j;
+            }
+         }
+
+         // Recursively build the < branch of the tree with the current thread.
+         node->LeftChild = build( references, permutation, start, median - 1, max_submit_depth, depth + 1 );
+
+         // Then recursively build the > branch of the tree with the current thread.
+         node->RightChild = build( references, permutation, median + 1, end, max_submit_depth, depth + 1 );
       }
+      else {
+         // Yes, child threads are available, so two threads will be used.
+         // Initialize end_index = 0 so that the 'for' loop that partitions the reference arrays will partition
+         // a number of arrays equal to dim.
+         int start_index = 1;
 
-      // Copy the temporary array to references[dim - 1] to finish permutation.
-      for (int i = start; i <= end; ++i) references[dim - 1][i] = buffer[i];
+         // If depth < dim-1, copy references[permut[dim]] to references[permut[0]] where permut is the permutation
+         // vector for this level of the tree.
+         // Sort the two halves of references[permut[0]] with p+1 as the most significant key of the super key.
+         // Use as the temporary array references[permut[1]] because that array is not used for partitioning.
+         // Partition a number of reference arrays equal to the tree depth because those reference arrays are already sorted.
+         if (depth < dim - 1) {
+            start_index = dim - depth;
+            T** const target = references[permutation[depth][0]];
+            T** const buffer = references[permutation[depth][1]];
 
-      // Recursively build the < branch of the tree.
-      node->LeftChild = build( references, buffer, start, lower, depth + 1 );
+            // Copy and sort the lower half of references[permut[0]] with a child thread.
+            auto copy_future = std::async(
+               std::launch::async,
+               [&]
+               {
+                  for (int i = start; i <= median - 1; ++i) target[i] = reference[i];
+                  sortReferenceAscending( target, buffer, start, median - 1, axis + 1, max_submit_depth, depth );
+               }
+            );
 
-      // Recursively build the > branch of the tree.
-      node->RightChild = build( references, buffer, median + 1, upper, depth + 1 );
+            // Copy and sort the upper half of references[permut[0]] with the current thread.
+            for (int i = median + 1; i <= end; ++i) target[i] = reference[i];
+            sortReferenceAscending( target, buffer, median + 1, end, axis + 1, max_submit_depth, depth );
 
-	}
+            // Wait for the child thread to finish execution.
+            try { copy_future.get(); }
+            catch (const std::exception& e) {
+               throw std::runtime_error( "error with copy future in build()\n" );
+            }
+         }
+
+         // Create a copy of the node->tuple array so that the current thread
+         // and the child thread do not contend for read access to this array.
+         T* point = new T[dim];
+         const T* tuple = node->Tuple;
+         for (int i = 0; i < dim; ++i) point[i] = tuple[i];
+
+         // Partition the reference arrays specified by 'start_index' in a priori sorted order by comparing super keys.
+         // Store the result from references[permut[i]]] in references[permut[i - 1]] where permut is the permutation
+         // vector for this level of the tree, thus permuting the reference arrays.
+         // Skip the element of references[permut[i]] that equals the tuple that is stored in the new KdNode.
+         for (int i = start_index; i < dim; ++i) {
+            // Specify the source and destination reference arrays.
+            T** const src = references[permutation[depth][i]];
+            T** const dst = references[permutation[depth][i - 1]];
+
+            // Two threads may be used to partition the reference arrays, analogous to
+            // the use of two threads to merge the results for the merge sort algorithm.
+            // Fill one reference array in ascending order with a child thread.
+            auto partition_future = std::async( std::launch::async,
+               [&]
+               {
+                  for (int lower = start - 1, upper = median, j = start; j <= median; ++j) {
+                     T* const src_j = src[j];
+                     const T compare = compareSuperKey( src_j, point, axis );
+                     if (compare < 0) dst[++lower] = src_j;
+                     else if (compare > 0) dst[++upper] = src_j;
+                  }
+               }
+            );
+
+            // Simultaneously fill the same reference array in descending order with the current thread.
+            for (int lower = median, upper = end + 1, k = end; k > median; --k) {
+               T* const src_k = src[k];
+               const T compare = compareSuperKey( src_k, tuple, axis );
+               if (compare < 0) dst[--lower] = src_k;
+               else if (compare > 0) dst[--upper] = src_k;
+            }
+
+            // Wait for the child thread to finish execution.
+            try { partition_future.get(); }
+            catch (const std::exception& e) {
+               throw std::runtime_error( "error with partition future in build()\n" );
+            }
+         }
+         delete [] point;
+
+         // Recursively build the < branch of the tree with a child thread.
+         auto build_future = std::async(
+            std::launch::async,
+            build, references, std::ref( permutation ), start, median - 1, max_submit_depth, depth + 1
+         );
+
+         // And simultaneously build the > branch of the tree with the current thread.
+         node->RightChild = build( references, permutation, median + 1, end, max_submit_depth, depth + 1 );
+
+         // Wait for the child thread to finish execution.
+         try { node->LeftChild = build_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with build future in build()\n" );
+         }
+      }
+   }
    else if (end < start) {
-      // This is an illegal condition that should never occur, so test for it last.
-      std::cout << "error has occurred at depth = " << depth << " : end = " << end
-         << "  <  start = " << start << "\n";
-      std::exit( 1 );
-	}
+      std::ostringstream buffer;
+      buffer << "error at depth = " << depth << " : end = " << end << "  <  start = " << start << " in build()\n";
+      throw std::runtime_error( buffer.str() );
+   }
 
 	// Return the pointer to the root of the k-d tree.
 	return node;
 }
 
-/*
- * Walk the k-d tree and check that the children of a node are in the correct branch of that node.
- */
 template<typename T, int dim>
-int Kdtree<T, dim>::verify(KdtreeNode* node, int depth) const
+void Kdtree<T, dim>::createPermutation(std::vector<int>& permutation, int coordinates_num)
+{
+   int max_depth = 1;
+   int size = coordinates_num;
+   while (size > 0) {
+      ++max_depth;
+      size >>= 1;
+   }
+
+   permutation.resize( max_depth );
+   for (size_t i = 0; i < permutation.size(); ++i) permutation[i] = i % dim;
+}
+
+template<typename T, int dim>
+int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation, int max_submit_depth, int depth) const
 {
    int count = 1;
-	if (node->Tuple == nullptr) {
-	    std::cout << "point is null!\n";
-	    std::exit( 1 );
-	}
+	if (node->Tuple == nullptr) throw std::runtime_error( "point is null in verify()\n" );
 
 	// The partition cycles as x, y, z, w...
-	const int axis = depth % dim;
+	const int axis = permutation[depth];
    if (node->LeftChild != nullptr) {
       if (node->LeftChild->Tuple[axis] > node->Tuple[axis]) {
-         std::cout << "child is > node!\n";
-         std::exit( 1 );
+         throw std::runtime_error( "child is > node in verify()\n" );
       }
       if (compareSuperKey( node->LeftChild->Tuple, node->Tuple, axis ) >= 0) {
-         std::cout << "child is >= node!\n";
-         std::exit( 1 );
+         throw std::runtime_error( "child is >= node in verify()\n" );
       }
-      count += verify( node->LeftChild.get(), depth + 1 );
 	}
 	if (node->RightChild != nullptr) {
       if (node->RightChild->Tuple[axis] < node->Tuple[axis]) {
-         std::cout << "child is < node!\n";
-         std::exit( 1 );
+         throw std::runtime_error( "child is < node in verify()\n" );
       }
       if (compareSuperKey( node->RightChild->Tuple, node->Tuple, axis ) <= 0) {
-         std::cout << "child is <= node\n";
-         std::exit( 1 );
+         throw std::runtime_error( "child is <= node in verify()\n" );
       }
-      count += verify( node->RightChild.get(), depth + 1 );
 	}
+
+   // Verify the < branch with a child thread at as many levels of the tree as possible.
+   // Create the child thread as high in the tree as possible for greater utilization.
+
+   // Is a child thread available to verify the < branch?
+   if (max_submit_depth < 0 || max_submit_depth < depth) {
+      // No, so verify the < branch with the current thread.
+      if (node->LeftChild != nullptr) {
+         count += verify( node->LeftChild.get(), permutation, max_submit_depth, depth + 1 );
+      }
+
+      // Then verify the > branch with the current thread.
+      if (node->RightChild != nullptr) {
+         count += verify( node->RightChild.get(), permutation, max_submit_depth, depth + 1 );
+      }
+   }
+   else {
+      // Yes, so verify the < branch with a child thread.
+      // Note that a lambda is required because this verify() function is not static.
+      // The use of std::ref may be unnecessary in view of the [&] lambda argument specification.
+      std::future<int> verify_future;
+      if (node->LeftChild != nullptr) {
+         verify_future = std::async(
+            std::launch::async,
+            [&]{ return verify( node->LeftChild.get(), std::ref( permutation ), max_submit_depth, depth + 1 ); }
+         );
+      }
+
+      // And simultaneously verify the > branch with the current thread.
+      int right_count = 0;
+      if (node->RightChild != nullptr) {
+         right_count = verify( node->RightChild.get(), permutation, max_submit_depth, depth + 1 );
+      }
+
+      // Wait for the child thread to finish execution.
+      int left_count = 0;
+      if (node->LeftChild != nullptr) {
+         try { left_count = verify_future.get(); }
+         catch (const std::exception& e) {
+            throw std::runtime_error( "error with verify future in verify()\n" );
+         }
+      }
+
+      // Sum the counts returned by the child and current threads.
+      count += left_count + right_count;
+   }
 	return count;
 }
 
 template<typename T, int dim>
-void Kdtree<T, dim>::create(std::vector<const T*>& coordinates, int max_submit_depth)
+void Kdtree<T, dim>::create(std::vector<T*>& coordinates)
 {
-   const T*** references = new T**[dim + 1];
+   T*** const references = new T**[dim + 1];
    references[0] = coordinates.data();
    const auto size = static_cast<int>(coordinates.size());
    for (int i = 1; i <= dim; ++i) references[i] = new T*[size];
 
-
    auto start_time = std::chrono::system_clock::now();
-   sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, max_submit_depth, 0 );
+   sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, MaxSubmitDepth, 0 );
    auto end_time = std::chrono::system_clock::now();
-   const auto sort_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
+   const auto sort_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
    start_time = std::chrono::system_clock::now();
    const int end = removeDuplicates( references[0], 0, size );
    end_time = std::chrono::system_clock::now();
-   const auto remove_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
+   const auto remove_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
    start_time = std::chrono::system_clock::now();
    int max_depth = 1, s = size;
@@ -494,12 +658,27 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates, int max_submit_d
       std::swap( indices[dim - 1], indices[dim] );
    }
 
-   Root = build( references, buffer, 0, end[0], 0 );
+   Root = build( references, permutation, 0, end, MaxSubmitDepth, 0 );
    end_time = std::chrono::system_clock::now();
-   const auto build_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() * 1e-9;
+   const auto build_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-   NodeNum = verify( Root.get(), 0 );
+   start_time = std::chrono::system_clock::now();
+   std::vector<int> verify_permutation;
+   createPermutation( verify_permutation, size );
+   NodeNum = verify( Root.get(), verify_permutation, MaxSubmitDepth, 0 );
+   end_time = std::chrono::system_clock::now();
+   const auto verify_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
    std::cout << "\n>> Number of nodes = " << NodeNum << "\n";
+
+   std::cout <<
+      " >> Total Time = " << std::fixed << std::setprecision( 2 ) << sort_time + remove_time + build_time + verify_time
+      << "\n >> Sort Time = " << sort_time << "\n >> Remove Time = " << remove_time
+      << "\n >> Build Time = " << build_time << "\n >> Verify Time = " << verify_time << "\n\n";
+
+   for (int i = 1; i <= dim; ++i) delete [] references[i];
+   delete [] references;
 }
 
 template<typename T, int dim>
