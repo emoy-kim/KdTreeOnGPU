@@ -10,16 +10,16 @@ public:
 
    struct KdtreeNode
    {
-      T* const Tuple;
+      const T* Tuple;
       std::shared_ptr<KdtreeNode> LeftChild;
       std::shared_ptr<KdtreeNode> RightChild;
 
-      explicit KdtreeNode(T* const tuple) : Tuple( tuple ) {}
+      explicit KdtreeNode(const T* tuple) : Tuple( tuple ) {}
    };
 
-   explicit Kdtree(std::vector<TVec>& vertices, int thread_num = 4);
+   explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 4);
 
-   void create(std::vector<T*>& coordinates);
+   void create(std::vector<const T*>& coordinates);
    void print() const
    {
       if (Root != nullptr) print( Root.get(), 0 );
@@ -56,8 +56,8 @@ private:
    [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
    void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
-      T** const reference,
-      T** const buffer,
+      const T** reference,
+      const T** buffer,
       int low,
       int high,
       int axis,
@@ -65,8 +65,8 @@ private:
       int depth
    );
    static void sortReferenceDescending(
-      T** const reference,
-      T** const buffer,
+      const T** reference,
+      const T** buffer,
       int low,
       int high,
       int axis,
@@ -74,8 +74,8 @@ private:
       int depth
    );
    static void sortBufferAscending(
-      T** const reference,
-      T** const buffer,
+      const T** reference,
+      const T** buffer,
       int low,
       int high,
       int axis,
@@ -83,17 +83,17 @@ private:
       int depth
    );
    static void sortBufferDescending(
-      T** const reference,
-      T** const buffer,
+      const T** reference,
+      const T** buffer,
       int low,
       int high,
       int axis,
       int max_submit_depth,
       int depth
    );
-   static int removeDuplicates(T** const reference, int leading_dim_for_super_key, int size);
+   static int removeDuplicates(const T** reference, int leading_dim_for_super_key, int size);
    static std::shared_ptr<KdtreeNode> build(
-      T*** const references,
+      const T*** references,
       const std::vector<std::vector<int>>& permutation,
       int start,
       int end,
@@ -104,4 +104,5 @@ private:
    void print(KdtreeNode* node, int depth) const;
 };
 
+template class Kdtree<float, 1>;
 template class Kdtree<float, 3>;

@@ -1,12 +1,12 @@
 #include "kdtree.h"
 
 template<typename T, int dim>
-Kdtree<T, dim>::Kdtree(std::vector<TVec>& vertices, int thread_num) :
+Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices, int thread_num) :
    NodeNum( 0 ), MaxThreadNum( 0 ), MaxSubmitDepth( -1 )
 {
-   std::vector<T*> coordinates;
+   std::vector<const T*> coordinates;
    coordinates.reserve( vertices.size() );
-   for (auto& v : vertices) coordinates.emplace_back( glm::value_ptr( v ) );
+   for (const auto& v : vertices) coordinates.emplace_back( &v[0] );
 
    prepareMultiThreading( thread_num );
    create( coordinates );
@@ -41,8 +41,8 @@ void Kdtree<T, dim>::prepareMultiThreading(int thread_num)
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortReferenceAscending(
-   T** const reference,
-   T** const buffer,
+   const T** reference,
+   const T** buffer,
    int low,
    int high,
    int axis,
@@ -55,7 +55,6 @@ void Kdtree<T, dim>::sortReferenceAscending(
 
       // Is a child thread available to subdivide the lower half of the reference array?
       if (max_submit_depth < 0 || max_submit_depth < depth) {
-
          // No, recursively subdivide the lower/upper halves of the reference array with the current thread
          sortBufferAscending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
          sortBufferDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
@@ -111,7 +110,7 @@ void Kdtree<T, dim>::sortReferenceAscending(
       // sort in ascending order and leaves the result in the reference array.
       for (int i = low + 1; i <= high; ++i) {
          int j;
-         T* const t = reference[i];
+         const T* t = reference[i];
          for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) > 0; --j) reference[j] = reference[j - 1];
          reference[j] = t;
       }
@@ -120,8 +119,8 @@ void Kdtree<T, dim>::sortReferenceAscending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortReferenceDescending(
-   T** const reference,
-   T** const buffer,
+   const T** reference,
+   const T** buffer,
    int low,
    int high,
    int axis,
@@ -173,7 +172,7 @@ void Kdtree<T, dim>::sortReferenceDescending(
    else {
       for (int i = low + 1; i <= high; ++i) {
          int j;
-         T* const t = reference[i];
+         const T* t = reference[i];
          for (j = i; j > low && compareSuperKey( reference[j - 1], t, axis ) < 0; --j) reference[j] = reference[j - 1];
          reference[j] = t;
       }
@@ -182,8 +181,8 @@ void Kdtree<T, dim>::sortReferenceDescending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortBufferAscending(
-   T** const reference,
-   T** const buffer,
+   const T** reference,
+   const T** buffer,
    int low,
    int high,
    int axis,
@@ -236,9 +235,8 @@ void Kdtree<T, dim>::sortBufferAscending(
       int i, j;
       buffer[high] = reference[high];
       for (j = high - 1; j >= low; --j) {
-         for (i = j; i < high; ++i) {
-            if (compareSuperKey( reference[j], reference[i + 1], axis ) > 0) buffer[i] = buffer[i + 1];
-            else break;
+         for (i = j; i < high && compareSuperKey( reference[j], buffer[i + 1], axis ) > 0; ++i) {
+            buffer[i] = buffer[i + 1];
          }
          buffer[i] = reference[j];
       }
@@ -247,8 +245,8 @@ void Kdtree<T, dim>::sortBufferAscending(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::sortBufferDescending(
-   T** const reference,
-   T** const buffer,
+   const T** reference,
+   const T** buffer,
    int low,
    int high,
    int axis,
@@ -301,9 +299,8 @@ void Kdtree<T, dim>::sortBufferDescending(
       int i, j;
       buffer[high] = reference[high];
       for (j = high - 1; j >= low; --j) {
-         for (i = j; i < high; ++i) {
-            if (compareSuperKey( reference[j], reference[i + 1], axis ) < 0) buffer[i] = buffer[i + 1];
-            else break;
+         for (i = j; i < high && compareSuperKey( reference[j], buffer[i + 1], axis ) < 0; ++i) {
+            buffer[i] = buffer[i + 1];
          }
          buffer[i] = reference[j];
       }
@@ -311,7 +308,7 @@ void Kdtree<T, dim>::sortBufferDescending(
 }
 
 template<typename T, int dim>
-int Kdtree<T, dim>::removeDuplicates(T** const reference, int leading_dim_for_super_key, int size)
+int Kdtree<T, dim>::removeDuplicates(const T** reference, int leading_dim_for_super_key, int size)
 {
    int end = 0;
 	for (int j = 1; j < size; ++j) {
@@ -330,7 +327,7 @@ int Kdtree<T, dim>::removeDuplicates(T** const reference, int leading_dim_for_su
 
 template<typename T, int dim>
 std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
-   T*** const references,
+   const T*** references,
    const std::vector<std::vector<int>>& permutation,
    int start,
    int end,
@@ -344,7 +341,7 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
    const int axis = permutation[depth][permutation[0].size() - 1];
 
    // Obtain the reference array that corresponds to the most significant key.
-   T** const reference = references[permutation[depth][dim]];
+   const T** reference = references[permutation[depth][dim]];
 
    if (end == start) {
       // Only one reference was passed to this function, so add it to the tree.
@@ -388,8 +385,8 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
          // Partition a number of reference arrays equal to the tree depth because those reference arrays are already sorted.
          if (depth < dim - 1) {
             start_index = dim - depth;
-            T** const target = references[permutation[depth][0]];
-            T** const buffer = references[permutation[depth][1]];
+            const T** target = references[permutation[depth][0]];
+            const T** buffer = references[permutation[depth][1]];
             for (int i = start; i <= end; ++i) target[i] = reference[i];
 
             // Sort the lower half of references[permut[0]] with the current thread.
@@ -402,16 +399,16 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
          // Store the result from references[permut[i]]] in references[permut[i - 1]] where permut is the permutation
          // vector for this level of the tree, thus permuting the reference arrays.
          // Skip the element of references[permut[i]] that equals the tuple that is stored in the new KdNode.
-         T* const tuple = node->Tuple;
+         const T* tuple = node->Tuple;
          for (int i = start_index; i < dim; ++i) {
             // Specify the source and destination reference arrays.
-            T** const src = references[permutation[depth][i]];
-            T** const dst = references[permutation[depth][i - 1]];
+            const T** src = references[permutation[depth][i]];
+            const T** dst = references[permutation[depth][i - 1]];
 
             // Fill the lower and upper halves of one reference array
             // in ascending order with the current thread.
             for (int j = start, lower = start - 1, upper = median; j <= end; ++j) {
-               T* const src_j = src[j];
+               const T* src_j = src[j];
                const T compare = compareSuperKey( src_j, tuple, axis );
                if (compare < 0) dst[++lower] = src_j;
                else if (compare > 0) dst[++upper] = src_j;
@@ -437,8 +434,8 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
          // Partition a number of reference arrays equal to the tree depth because those reference arrays are already sorted.
          if (depth < dim - 1) {
             start_index = dim - depth;
-            T** const target = references[permutation[depth][0]];
-            T** const buffer = references[permutation[depth][1]];
+            const T** target = references[permutation[depth][0]];
+            const T** buffer = references[permutation[depth][1]];
 
             // Copy and sort the lower half of references[permut[0]] with a child thread.
             auto copy_future = std::async(
@@ -473,8 +470,8 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
          // Skip the element of references[permut[i]] that equals the tuple that is stored in the new KdNode.
          for (int i = start_index; i < dim; ++i) {
             // Specify the source and destination reference arrays.
-            T** const src = references[permutation[depth][i]];
-            T** const dst = references[permutation[depth][i - 1]];
+            const T** src = references[permutation[depth][i]];
+            const T** dst = references[permutation[depth][i - 1]];
 
             // Two threads may be used to partition the reference arrays, analogous to
             // the use of two threads to merge the results for the merge sort algorithm.
@@ -483,7 +480,7 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
                [&]
                {
                   for (int lower = start - 1, upper = median, j = start; j <= median; ++j) {
-                     T* const src_j = src[j];
+                     const T* src_j = src[j];
                      const T compare = compareSuperKey( src_j, point, axis );
                      if (compare < 0) dst[++lower] = src_j;
                      else if (compare > 0) dst[++upper] = src_j;
@@ -493,7 +490,7 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
 
             // Simultaneously fill the same reference array in descending order with the current thread.
             for (int lower = median, upper = end + 1, k = end; k > median; --k) {
-               T* const src_k = src[k];
+               const T* src_k = src[k];
                const T compare = compareSuperKey( src_k, tuple, axis );
                if (compare < 0) dst[--lower] = src_k;
                else if (compare > 0) dst[--upper] = src_k;
@@ -621,12 +618,12 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation
 }
 
 template<typename T, int dim>
-void Kdtree<T, dim>::create(std::vector<T*>& coordinates)
+void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
 {
-   T*** const references = new T**[dim + 1];
+   const T*** references = new const T**[dim + 1];
    references[0] = coordinates.data();
    const auto size = static_cast<int>(coordinates.size());
-   for (int i = 1; i <= dim; ++i) references[i] = new T*[size];
+   for (int i = 1; i <= dim; ++i) references[i] = new const T*[size];
 
    auto start_time = std::chrono::system_clock::now();
    sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, MaxSubmitDepth, 0 );
