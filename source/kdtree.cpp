@@ -6,7 +6,7 @@ Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices, int thread_num) :
 {
    std::vector<const T*> coordinates;
    coordinates.reserve( vertices.size() );
-   for (const auto& v : vertices) coordinates.emplace_back( &v[0] );
+   for (const auto& v : vertices) coordinates.emplace_back( glm::value_ptr( v ) );
 
    prepareMultiThreading( thread_num );
    create( coordinates );
@@ -443,12 +443,12 @@ void Kdtree<T, dim>::createPermutation(std::vector<int>& permutation, int coordi
 }
 
 template<typename T, int dim>
-int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation, int max_submit_depth, int depth) const
+int Kdtree<T, dim>::verify(const KdtreeNode* node, int depth) const
 {
    int count = 1;
 	if (node->Tuple == nullptr) throw std::runtime_error( "point is null in verify()\n" );
 
-	const int axis = permutation[depth];
+	const int axis = Permutation[depth];
    if (node->LeftChild != nullptr) {
       if (node->LeftChild->Tuple[axis] > node->Tuple[axis]) {
          throw std::runtime_error( "child is > node in verify()\n" );
@@ -470,16 +470,9 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation
    // Create the child thread as high in the tree as possible for greater utilization.
 
    // Is a child thread available to verify the < branch?
-   if (max_submit_depth < 0 || max_submit_depth < depth) {
-      // No, so verify the < branch with the current thread.
-      if (node->LeftChild != nullptr) {
-         count += verify( node->LeftChild.get(), permutation, max_submit_depth, depth + 1 );
-      }
-
-      // Then verify the > branch with the current thread.
-      if (node->RightChild != nullptr) {
-         count += verify( node->RightChild.get(), permutation, max_submit_depth, depth + 1 );
-      }
+   if (MaxSubmitDepth < 0 || MaxSubmitDepth < depth) {
+      if (node->LeftChild != nullptr) count += verify( node->LeftChild.get(), depth + 1 );
+      if (node->RightChild != nullptr) count += verify( node->RightChild.get(), depth + 1 );
    }
    else {
       // Yes, so verify the < branch with a child thread.
@@ -487,19 +480,13 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation
       // The use of std::ref may be unnecessary in view of the [&] lambda argument specification.
       std::future<int> verify_future;
       if (node->LeftChild != nullptr) {
-         verify_future = std::async(
-            std::launch::async,
-            [&]{ return verify( node->LeftChild.get(), std::ref( permutation ), max_submit_depth, depth + 1 ); }
-         );
+         verify_future = std::async( std::launch::async, [&]{ return verify( node->LeftChild.get(), depth + 1 ); } );
       }
 
       // And simultaneously verify the > branch with the current thread.
       int right_count = 0;
-      if (node->RightChild != nullptr) {
-         right_count = verify( node->RightChild.get(), permutation, max_submit_depth, depth + 1 );
-      }
+      if (node->RightChild != nullptr) right_count = verify( node->RightChild.get(), depth + 1 );
 
-      // Wait for the child thread to finish execution.
       int left_count = 0;
       if (node->LeftChild != nullptr) {
          try { left_count = verify_future.get(); }
@@ -508,7 +495,6 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation
          }
       }
 
-      // Sum the counts returned by the child and current threads.
       count += left_count + right_count;
    }
 	return count;
@@ -556,9 +542,8 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
    start_time = std::chrono::system_clock::now();
-   std::vector<int> verify_permutation;
-   createPermutation( verify_permutation, size );
-   NodeNum = verify( Root.get(), verify_permutation, MaxSubmitDepth, 0 );
+   createPermutation( Permutation, size );
+   NodeNum = verify( Root.get(), 0 );
    end_time = std::chrono::system_clock::now();
    const auto verify_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
@@ -575,13 +560,13 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
 template<typename T, int dim>
 bool Kdtree<T, dim>::isInside(
    const KdtreeNode* node,
-   const std::vector<T>& lower,
-   const std::vector<T>& upper,
+   const TVec& lower,
+   const TVec& upper,
    const std::vector<bool>& enable
 )
 {
    bool inside = true;
-   for (size_t i = 0; i < lower.size(); ++i) {
+   for (int i = 0; i < dim; ++i) {
       if (enable[i] && (lower[i] > node->Tuple[i] || upper[i] < node->Tuple[i])) {
          inside = false;
          break;
@@ -594,8 +579,8 @@ template<typename T, int dim>
 void Kdtree<T, dim>::search(
    std::list<const KdtreeNode*>& found,
    const KdtreeNode* node,
-   const std::vector<T>& lower,
-   const std::vector<T>& upper,
+   const TVec& lower,
+   const TVec& upper,
    const std::vector<int>& permutation,
    const std::vector<bool>& enable,
    int max_submit_depth,
@@ -606,9 +591,9 @@ void Kdtree<T, dim>::search(
    if (isInside( node, lower, upper, enable )) found.push_front( node );
 
    const bool search_left = node->LeftChild != nullptr &&
-      (compareSuperKey( node->Tuple, lower.data(), axis ) >= 0 || !enable[axis]);
+      (compareSuperKey( node->Tuple, glm::value_ptr( lower ), axis ) >= 0 || !enable[axis]);
    const bool search_right = node->RightChild != nullptr &&
-      (compareSuperKey( node->Tuple, upper.data(), axis ) <= 0 || !enable[axis]);
+      (compareSuperKey( node->Tuple, glm::value_ptr( upper ), axis ) <= 0 || !enable[axis]);
    if (search_left && search_right && 0 <= max_submit_depth && depth <= max_submit_depth) {
       std::list<const KdtreeNode*> left;
       auto search_future = std::async(
@@ -645,6 +630,23 @@ void Kdtree<T, dim>::search(
          search( right, node->RightChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
          found.splice( found.end(), right );
       }
+   }
+}
+
+template<typename T, int dim>
+void Kdtree<T, dim>::findNearestNeighbors(
+   std::priority_queue<E>& heap,
+   const KdtreeNode* node,
+   const TVec& query,
+   int depth
+) const
+{
+   const int axis = Permutation[depth];
+   if (query[axis] < node->Tuple[axis]) {
+      if (node->LeftChild != nullptr) findNearestNeighbors( heap, node->LeftChild.get(), query, depth + 1 );
+
+      const T distance = node->Tuple[axis] - query[axis];
+
    }
 }
 

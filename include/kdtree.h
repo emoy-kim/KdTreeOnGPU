@@ -17,12 +17,31 @@ public:
       explicit KdtreeNode(const T* tuple) : Tuple( tuple ) {}
    };
 
+   using E = std::pair<T, const KdtreeNode*>;
+
    explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
 
    void create(std::vector<const T*>& coordinates);
-   void print() const
+   void print() const { if (Root != nullptr) print( Root.get(), 0 ); }
+   [[nodiscard]] std::list<const KdtreeNode*> search(const TVec& query, T search_radius) const
    {
-      if (Root != nullptr) print( Root.get(), 0 );
+      std::list<const KdtreeNode*> found;
+      if (Root != nullptr) {
+         search(
+            found, Root.get(),
+            query - search_radius, query + search_radius,
+            Permutation, std::vector<bool>(dim, true), MaxSubmitDepth, 0
+         );
+      }
+      return found;
+   }
+   [[nodiscard]] std::forward_list<E> findNearestNeighbors(const TVec& query, int neighbor_num) const
+   {
+      std::forward_list<E> found;
+      std::priority_queue<E> heap;
+      if (Root != nullptr) findNearestNeighbors( heap, Root.get(), query, 0 );
+      for (; !heap.empty(); heap.pop()) found.emplace_front( heap.top() );
+      return found;
    }
 
 private:
@@ -31,6 +50,7 @@ private:
    int NodeNum;
    int MaxThreadNum;
    int MaxSubmitDepth;
+   std::vector<int> Permutation;
    std::shared_ptr<KdtreeNode> Root;
 
    [[nodiscard]] static T compareSuperKey(const T* const a, const T* const b, int axis)
@@ -43,16 +63,11 @@ private:
       }
       return difference;
    }
-   [[nodiscard]] int verify(
-      KdtreeNode* node,
-      const std::vector<int>& permutation,
-      int max_submit_depth,
-      int depth
-   ) const;
+   [[nodiscard]] int verify(const KdtreeNode* node, int depth) const;
    [[nodiscard]] static bool isInside(
       const KdtreeNode* node,
-      const std::vector<T>& lower,
-      const std::vector<T>& upper,
+      const TVec& lower,
+      const TVec& upper,
       const std::vector<bool>& enable
    );
    void prepareMultiThreading(int thread_num);
@@ -105,15 +120,20 @@ private:
    static void search(
       std::list<const KdtreeNode*>& found,
       const KdtreeNode* node,
-      const std::vector<T>& lower,
-      const std::vector<T>& upper,
+      const TVec& lower,
+      const TVec& upper,
       const std::vector<int>& permutation,
       const std::vector<bool>& enable,
       int max_submit_depth,
       int depth
    );
+   void findNearestNeighbors(
+      std::priority_queue<E>& heap,
+      const KdtreeNode* node,
+      const TVec& query,
+      int depth
+   ) const;
    void print(KdtreeNode* node, int depth) const;
 };
 
-template class Kdtree<float, 1>;
 template class Kdtree<float, 3>;
