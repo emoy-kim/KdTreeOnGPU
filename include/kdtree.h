@@ -24,10 +24,6 @@ public:
    {
       if (Root != nullptr) print( Root.get(), 0 );
    }
-   [[nodiscard]] std::list<KdtreeNode*> search(const TVec& query, T radius)
-   {
-      return Root != nullptr ? search( Root.get(), query, radius, 0 ) : std::list<KdtreeNode*>{};
-   }
 
 private:
    inline static constexpr int InsertionSortThreshold = 15;
@@ -59,7 +55,6 @@ private:
       const std::vector<T>& upper,
       const std::vector<bool>& enable
    );
-   [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
    void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
       const T** reference,
@@ -107,6 +102,16 @@ private:
       int depth
    );
    static void createPermutation(std::vector<int>& permutation, int coordinates_num);
+   static void search(
+      std::list<const KdtreeNode*>& found,
+      const KdtreeNode* node,
+      const std::vector<T>& lower,
+      const std::vector<T>& upper,
+      const std::vector<int>& permutation,
+      const std::vector<bool>& enable,
+      int max_submit_depth,
+      int depth
+   );
    void print(KdtreeNode* node, int depth) const;
 };
 

@@ -15,11 +15,13 @@ int main()
 
    constexpr float search_radius = 2.0f;
    const glm::vec3 query(4.0f, 3.0f, 1.0f);
-   const auto list = kdtree.search( query, search_radius );
+   const glm::vec3 lower = query - search_radius;
+   const glm::vec3 upper = query + search_radius;
+   /*const auto list = kdtree.search( query, search_radius );
    std::cout << "\n>> " << list.size() << " nodes within " << search_radius << " units of (" <<
       query.x << ", " << query.y << ", " << query.z << ") in all dimensions\n";
    std::cout << ">> List of k-d nodes within " << search_radius << "-unit search radius\n   ";
    for (const auto& p : list) std::cout << "(" << p->Tuple[0] << ", " << p->Tuple[1] << ", " << p->Tuple[2] << ") ";
-   std::cout << "\n";
+   std::cout << "\n";*/
    return 0;
 }

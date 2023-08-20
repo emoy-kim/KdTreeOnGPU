@@ -448,7 +448,6 @@ int Kdtree<T, dim>::verify(KdtreeNode* node, const std::vector<int>& permutation
    int count = 1;
 	if (node->Tuple == nullptr) throw std::runtime_error( "point is null in verify()\n" );
 
-	// The partition cycles as x, y, z, w...
 	const int axis = permutation[depth];
    if (node->LeftChild != nullptr) {
       if (node->LeftChild->Tuple[axis] > node->Tuple[axis]) {
@@ -592,46 +591,61 @@ bool Kdtree<T, dim>::isInside(
 }
 
 template<typename T, int dim>
-std::list<typename Kdtree<T, dim>::KdtreeNode*> Kdtree<T, dim>::search(
-   KdtreeNode* node,
-   const TVec& query,
-   T radius,
+void Kdtree<T, dim>::search(
+   std::list<const KdtreeNode*>& found,
+   const KdtreeNode* node,
+   const std::vector<T>& lower,
+   const std::vector<T>& upper,
+   const std::vector<int>& permutation,
+   const std::vector<bool>& enable,
+   int max_submit_depth,
    int depth
 )
 {
-   // The partition cycles as x, y, z, w...
-   const int axis = depth % dim;
+   const int axis = permutation[depth];
+   if (isInside( node, lower, upper, enable )) found.push_front( node );
 
-	// If the distance from the query node to the node is within the radius in all k dimensions, add the node to a list.
-   bool inside = true;
-   std::list<KdtreeNode*> found;
-	for (int i = 0; i < dim; ++i) {
-      if (std::abs( query[i] - node->Tuple[i]) > radius) {
-         inside = false;
-         break;
+   const bool search_left = node->LeftChild != nullptr &&
+      (compareSuperKey( node->Tuple, lower.data(), axis ) >= 0 || !enable[axis]);
+   const bool search_right = node->RightChild != nullptr &&
+      (compareSuperKey( node->Tuple, upper.data(), axis ) <= 0 || !enable[axis]);
+   if (search_left && search_right && 0 <= max_submit_depth && depth <= max_submit_depth) {
+      std::list<const KdtreeNode*> left;
+      auto search_future = std::async(
+         std::launch::async,
+         [&]
+         {
+            search(
+               std::ref( left ), node->LeftChild.get(),
+               std::ref( lower ), std::ref( upper ), std::ref( permutation ), std::ref( enable ),
+               max_submit_depth, depth + 1
+            );
+         }
+      );
+
+      std::list<const KdtreeNode*> right;
+      search( right, node->RightChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+
+      try { search_future.get(); }
+      catch (const std::exception& e) {
+         throw std::runtime_error( "error with search future in search()\n" );
       }
-	}
-	if (inside) found.emplace_back( node ); // The push_back function expects a KdNode for a call by reference.
 
-	// Search the < branch of the k-d tree if the partition coordinate of the query point minus the radius is
-   // <= the partition coordinate of the node. The < branch must be searched when the radius equals the partition
-   // coordinate because the super key may assign a point to either branch of the tree if the sorting or partition
-   // coordinate, which forms the most significant portion of the super key, shows equality.
-	if (node->LeftChild != nullptr && (query[axis] - radius) <= node->Tuple[axis]) {
-	    std::list<KdtreeNode*> left = search( node->LeftChild.get(), query, radius, depth + 1 );
-	    found.splice( found.end(), left ); // Can't substitute search() for left.
-	}
-
-	// Search the > branch of the k-d tree if the partition coordinate of the query point plus the radius is
-   // >= the partition coordinate of the k-d node. The < branch must be searched when the radius equals the partition
-   // coordinate because the super key may assign a point to either branch of the tree if the sorting or partition
-   // coordinate, which forms the most significant portion of the super key, shows equality.
-	if (node->RightChild != nullptr && (query[axis] + radius) >= node->Tuple[axis]) {
-	    std::list<KdtreeNode*> right = search( node->RightChild.get(), query, radius, depth + 1 );
-	    found.splice( found.end(), right ); // Can't substitute search() for right.
-	}
-
-	return found;
+      found.splice( found.end(), left );
+      found.splice( found.end(), right );
+   }
+   else {
+      if (search_left) {
+         std::list<const KdtreeNode*> left;
+         search( left, node->LeftChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+         found.splice( found.end(), left );
+      }
+      if (search_right) {
+         std::list<const KdtreeNode*> right;
+         search( right, node->RightChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+         found.splice( found.end(), right );
+      }
+   }
 }
 
 template<typename T, int dim>
