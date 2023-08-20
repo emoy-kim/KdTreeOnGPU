@@ -30,7 +30,7 @@ public:
          search(
             found, Root.get(),
             query - search_radius, query + search_radius,
-            Permutation, std::vector<bool>(dim, true), MaxSubmitDepth, 0
+            Permutation, std::vector<bool>(dim, true), 0
          );
       }
       return found;
@@ -46,13 +46,14 @@ public:
 
 private:
    inline static constexpr int InsertionSortThreshold = 15;
+   inline static int MaxThreadNum;
+   inline static int MaxSubmitDepth;
 
    int NodeNum;
-   int MaxThreadNum;
-   int MaxSubmitDepth;
    std::vector<int> Permutation;
    std::shared_ptr<KdtreeNode> Root;
 
+   [[nodiscard]] static bool isThreadAvailable(int depth) { return MaxSubmitDepth >= 0 && MaxSubmitDepth >= depth; }
    [[nodiscard]] static T compareSuperKey(const T* const a, const T* const b, int axis)
    {
       T difference = a[axis] - b[axis];
@@ -70,14 +71,13 @@ private:
       const TVec& upper,
       const std::vector<bool>& enable
    );
-   void prepareMultiThreading(int thread_num);
+   static void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
       const T** reference,
       const T** buffer,
       int low,
       int high,
       int axis,
-      int max_submit_depth,
       int depth
    );
    static void sortReferenceDescending(
@@ -86,7 +86,6 @@ private:
       int low,
       int high,
       int axis,
-      int max_submit_depth,
       int depth
    );
    static void sortBufferAscending(
@@ -95,7 +94,6 @@ private:
       int low,
       int high,
       int axis,
-      int max_submit_depth,
       int depth
    );
    static void sortBufferDescending(
@@ -104,7 +102,6 @@ private:
       int low,
       int high,
       int axis,
-      int max_submit_depth,
       int depth
    );
    static int removeDuplicates(const T** reference, int size);
@@ -113,7 +110,6 @@ private:
       const std::vector<std::vector<int>>& permutation,
       int start,
       int end,
-      int max_submit_depth,
       int depth
    );
    static void createPermutation(std::vector<int>& permutation, int coordinates_num);
@@ -124,7 +120,6 @@ private:
       const TVec& upper,
       const std::vector<int>& permutation,
       const std::vector<bool>& enable,
-      int max_submit_depth,
       int depth
    );
    void findNearestNeighbors(

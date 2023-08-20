@@ -1,8 +1,7 @@
 #include "kdtree.h"
 
 template<typename T, int dim>
-Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices, int thread_num) :
-   NodeNum( 0 ), MaxThreadNum( 0 ), MaxSubmitDepth( -1 )
+Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices, int thread_num) : NodeNum( 0 )
 {
    std::vector<const T*> coordinates;
    coordinates.reserve( vertices.size() );
@@ -39,25 +38,24 @@ void Kdtree<T, dim>::sortReferenceAscending(
    int low,
    int high,
    int axis,
-   int max_submit_depth,
    int depth
 )
 {
    if (high - low > InsertionSortThreshold) {
       const int mid = low + (high - low) / 2;
-      if (max_submit_depth < 0 || max_submit_depth < depth) {
-         sortBufferAscending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
-         sortBufferDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+      if (!isThreadAvailable( depth )) {
+         sortBufferAscending( reference, buffer, low, mid, axis, depth + 1 );
+         sortBufferDescending( reference, buffer, mid + 1, high, axis, depth + 1 );
          for (int i = low, j = high, k = low; k <= high; ++k) {
             reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) < 0 ? buffer[i++] : buffer[j--];
          }
       }
       else {
          auto sort_future = std::async(
-            std::launch::async, sortBufferAscending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+            std::launch::async, sortBufferAscending, reference, buffer, low, mid, axis, depth + 1
          );
 
-         sortBufferDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         sortBufferDescending( reference, buffer, mid + 1, high, axis, depth + 1 );
 
          try { sort_future.get(); }
          catch (const std::exception& e) {
@@ -101,25 +99,24 @@ void Kdtree<T, dim>::sortReferenceDescending(
    int low,
    int high,
    int axis,
-   int max_submit_depth,
    int depth
 )
 {
    if (high - low > InsertionSortThreshold) {
       const int mid = low + (high - low) / 2;
-      if (max_submit_depth < 0 || max_submit_depth < depth) {
-         sortBufferDescending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
-         sortBufferAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+      if (!isThreadAvailable( depth )) {
+         sortBufferDescending( reference, buffer, low, mid, axis, depth + 1 );
+         sortBufferAscending( reference, buffer, mid + 1, high, axis, depth + 1 );
          for (int i = low, j = high, k = low; k <= high; ++k) {
             reference[k] = compareSuperKey( buffer[i], buffer[j], axis ) > 0 ? buffer[i++] : buffer[j--];
          }
       }
       else {
          auto sort_future = std::async(
-            std::launch::async, sortBufferDescending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+            std::launch::async, sortBufferDescending, reference, buffer, low, mid, axis, depth + 1
          );
 
-         sortBufferAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         sortBufferAscending( reference, buffer, mid + 1, high, axis, depth + 1 );
 
          try { sort_future.get(); }
          catch (const std::exception& e) {
@@ -163,25 +160,24 @@ void Kdtree<T, dim>::sortBufferAscending(
    int low,
    int high,
    int axis,
-   int max_submit_depth,
    int depth
 )
 {
    if (high - low > InsertionSortThreshold) {
       const int mid = low + (high - low) / 2;
-      if (max_submit_depth < 0 || max_submit_depth < depth) {
-         sortReferenceAscending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
-         sortReferenceDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+      if (!isThreadAvailable( depth )) {
+         sortReferenceAscending( reference, buffer, low, mid, axis, depth + 1 );
+         sortReferenceDescending( reference, buffer, mid + 1, high, axis, depth + 1 );
          for (int i = low, j = high, k = low; k <= high; ++k) {
             buffer[k] = compareSuperKey( reference[i], reference[j], axis ) < 0 ? reference[i++] : reference[j--];
          }
       }
       else {
          auto sort_future = std::async(
-            std::launch::async, sortReferenceAscending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+            std::launch::async, sortReferenceAscending, reference, buffer, low, mid, axis, depth + 1
          );
 
-         sortReferenceDescending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         sortReferenceDescending( reference, buffer, mid + 1, high, axis, depth + 1 );
 
          try { sort_future.get(); }
          catch (const std::exception& e) {
@@ -227,25 +223,24 @@ void Kdtree<T, dim>::sortBufferDescending(
    int low,
    int high,
    int axis,
-   int max_submit_depth,
    int depth
 )
 {
    if (high - low > InsertionSortThreshold) {
       const int mid = low + (high - low) / 2;
-      if (max_submit_depth < 0 || max_submit_depth < depth) {
-         sortReferenceDescending( reference, buffer, low, mid, axis, max_submit_depth, depth + 1 );
-         sortReferenceAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+      if (!isThreadAvailable( depth )) {
+         sortReferenceDescending( reference, buffer, low, mid, axis, depth + 1 );
+         sortReferenceAscending( reference, buffer, mid + 1, high, axis, depth + 1 );
          for (int i = low, j = high, k = low; k <= high; ++k) {
             buffer[k] = compareSuperKey( reference[i], reference[j], axis ) > 0 ? reference[i++] : reference[j--];
          }
       }
       else {
          auto sort_future = std::async(
-            std::launch::async, sortReferenceDescending, reference, buffer, low, mid, axis, max_submit_depth, depth + 1
+            std::launch::async, sortReferenceDescending, reference, buffer, low, mid, axis, depth + 1
          );
 
-         sortReferenceAscending( reference, buffer, mid + 1, high, axis, max_submit_depth, depth + 1 );
+         sortReferenceAscending( reference, buffer, mid + 1, high, axis, depth + 1 );
 
          try { sort_future.get(); }
          catch (const std::exception& e) {
@@ -306,7 +301,6 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
    const std::vector<std::vector<int>>& permutation,
    int start,
    int end,
-   int max_submit_depth,
    int depth
 )
 {
@@ -327,15 +321,15 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
    else if (end > start + 2) {
       const int mid = start + (end - start) / 2;
       node = std::make_shared<KdtreeNode>( reference[mid] );
-      if (max_submit_depth < 0 || max_submit_depth < depth) {
+      if (!isThreadAvailable( depth )) {
          int start_index = 1;
          if (depth < dim - 1) {
             start_index = dim - depth;
             const T** target = references[p[0]];
             const T** buffer = references[p[1]];
             for (int i = start; i <= end; ++i) target[i] = reference[i];
-            sortReferenceAscending( target, buffer, start, mid - 1, axis + 1, max_submit_depth, depth );
-            sortReferenceAscending( target, buffer, mid + 1, end, axis + 1, max_submit_depth, depth );
+            sortReferenceAscending( target, buffer, start, mid - 1, axis + 1, depth );
+            sortReferenceAscending( target, buffer, mid + 1, end, axis + 1, depth );
          }
 
          const T* tuple = node->Tuple;
@@ -349,8 +343,8 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
             }
          }
 
-         node->LeftChild = build( references, permutation, start, mid - 1, max_submit_depth, depth + 1 );
-         node->RightChild = build( references, permutation, mid + 1, end, max_submit_depth, depth + 1 );
+         node->LeftChild = build( references, permutation, start, mid - 1, depth + 1 );
+         node->RightChild = build( references, permutation, mid + 1, end, depth + 1 );
       }
       else {
          int start_index = 1;
@@ -363,12 +357,12 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
                [&]
                {
                   for (int i = start; i <= mid - 1; ++i) target[i] = reference[i];
-                  sortReferenceAscending( target, buffer, start, mid - 1, axis + 1, max_submit_depth, depth );
+                  sortReferenceAscending( target, buffer, start, mid - 1, axis + 1, depth );
                }
             );
 
             for (int i = mid + 1; i <= end; ++i) target[i] = reference[i];
-            sortReferenceAscending( target, buffer, mid + 1, end, axis + 1, max_submit_depth, depth );
+            sortReferenceAscending( target, buffer, mid + 1, end, axis + 1, depth );
 
             try { copy_future.get(); }
             catch (const std::exception& e) {
@@ -410,10 +404,10 @@ std::shared_ptr<typename Kdtree<T, dim>::KdtreeNode> Kdtree<T, dim>::build(
 
          auto build_future = std::async(
             std::launch::async,
-            build, references, std::ref( permutation ), start, mid - 1, max_submit_depth, depth + 1
+            build, references, std::ref( permutation ), start, mid - 1, depth + 1
          );
 
-         node->RightChild = build( references, permutation, mid + 1, end, max_submit_depth, depth + 1 );
+         node->RightChild = build( references, permutation, mid + 1, end, depth + 1 );
 
          try { node->LeftChild = build_future.get(); }
          catch (const std::exception& e) {
@@ -466,24 +460,16 @@ int Kdtree<T, dim>::verify(const KdtreeNode* node, int depth) const
       }
 	}
 
-   // Verify the < branch with a child thread at as many levels of the tree as possible.
-   // Create the child thread as high in the tree as possible for greater utilization.
-
-   // Is a child thread available to verify the < branch?
-   if (MaxSubmitDepth < 0 || MaxSubmitDepth < depth) {
+   if (!isThreadAvailable( depth )) {
       if (node->LeftChild != nullptr) count += verify( node->LeftChild.get(), depth + 1 );
       if (node->RightChild != nullptr) count += verify( node->RightChild.get(), depth + 1 );
    }
    else {
-      // Yes, so verify the < branch with a child thread.
-      // Note that a lambda is required because this verify() function is not static.
-      // The use of std::ref may be unnecessary in view of the [&] lambda argument specification.
       std::future<int> verify_future;
       if (node->LeftChild != nullptr) {
          verify_future = std::async( std::launch::async, [&]{ return verify( node->LeftChild.get(), depth + 1 ); } );
       }
 
-      // And simultaneously verify the > branch with the current thread.
       int right_count = 0;
       if (node->RightChild != nullptr) right_count = verify( node->RightChild.get(), depth + 1 );
 
@@ -509,7 +495,7 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
    references[0] = coordinates.data();
 
    auto start_time = std::chrono::system_clock::now();
-   sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, MaxSubmitDepth, 0 );
+   sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, 0 );
    auto end_time = std::chrono::system_clock::now();
    const auto sort_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
@@ -535,8 +521,7 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
       permutation[i] = indices;
       std::swap( indices[dim - 1], indices[dim] );
    }
-
-   Root = build( references, permutation, 0, end, MaxSubmitDepth, 0 );
+   Root = build( references, permutation, 0, end, 0 );
    end_time = std::chrono::system_clock::now();
    const auto build_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
@@ -583,7 +568,6 @@ void Kdtree<T, dim>::search(
    const TVec& upper,
    const std::vector<int>& permutation,
    const std::vector<bool>& enable,
-   int max_submit_depth,
    int depth
 )
 {
@@ -594,7 +578,7 @@ void Kdtree<T, dim>::search(
       (compareSuperKey( node->Tuple, glm::value_ptr( lower ), axis ) >= 0 || !enable[axis]);
    const bool search_right = node->RightChild != nullptr &&
       (compareSuperKey( node->Tuple, glm::value_ptr( upper ), axis ) <= 0 || !enable[axis]);
-   if (search_left && search_right && 0 <= max_submit_depth && depth <= max_submit_depth) {
+   if (search_left && search_right && isThreadAvailable( depth )) {
       std::list<const KdtreeNode*> left;
       auto search_future = std::async(
          std::launch::async,
@@ -602,14 +586,13 @@ void Kdtree<T, dim>::search(
          {
             search(
                std::ref( left ), node->LeftChild.get(),
-               std::ref( lower ), std::ref( upper ), std::ref( permutation ), std::ref( enable ),
-               max_submit_depth, depth + 1
+               std::ref( lower ), std::ref( upper ), std::ref( permutation ), std::ref( enable ), depth + 1
             );
          }
       );
 
       std::list<const KdtreeNode*> right;
-      search( right, node->RightChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+      search( right, node->RightChild.get(), lower, upper, permutation, enable, depth + 1 );
 
       try { search_future.get(); }
       catch (const std::exception& e) {
@@ -622,12 +605,12 @@ void Kdtree<T, dim>::search(
    else {
       if (search_left) {
          std::list<const KdtreeNode*> left;
-         search( left, node->LeftChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+         search( left, node->LeftChild.get(), lower, upper, permutation, enable, depth + 1 );
          found.splice( found.end(), left );
       }
       if (search_right) {
          std::list<const KdtreeNode*> right;
-         search( right, node->RightChild.get(), lower, upper, permutation, enable, max_submit_depth, depth + 1 );
+         search( right, node->RightChild.get(), lower, upper, permutation, enable, depth + 1 );
          found.splice( found.end(), right );
       }
    }
