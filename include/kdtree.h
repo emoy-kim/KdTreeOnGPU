@@ -91,7 +91,7 @@ private:
       int max_submit_depth,
       int depth
    );
-   static int removeDuplicates(const T** reference, int leading_dim_for_super_key, int size);
+   static int removeDuplicates(const T** reference, int size);
    static std::shared_ptr<KdtreeNode> build(
       const T*** references,
       const std::vector<std::vector<int>>& permutation,

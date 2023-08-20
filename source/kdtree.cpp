@@ -308,19 +308,17 @@ void Kdtree<T, dim>::sortBufferDescending(
 }
 
 template<typename T, int dim>
-int Kdtree<T, dim>::removeDuplicates(const T** reference, int leading_dim_for_super_key, int size)
+int Kdtree<T, dim>::removeDuplicates(const T** reference, int size)
 {
    int end = 0;
 	for (int j = 1; j < size; ++j) {
-      const T compare = compareSuperKey( reference[j], reference[end], leading_dim_for_super_key );
+      const T compare = compareSuperKey( reference[j], reference[end], 0 );
       if (compare < 0) {
          std::ostringstream buffer;
-         buffer << "sort failure: compareSuperKey( reference[" << j << "], reference[" << j - 1 << "], ("
-            << leading_dim_for_super_key << ") = " << compare  << "\n";
+         buffer << "sort error: (reference[" << j << "], reference[" << j - 1 << "]) = " << compare << "\n";
 		   throw std::runtime_error( buffer.str() );
       }
       else if (compare > 0) reference[++end] = reference[j];
-      else delete [] reference[j];
 	}
 	return end;
 }
@@ -632,7 +630,7 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
    start_time = std::chrono::system_clock::now();
-   const int end = removeDuplicates( references[0], 0, size );
+   const int end = removeDuplicates( references[0], size );
    end_time = std::chrono::system_clock::now();
    const auto remove_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
@@ -667,12 +665,12 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
    end_time = std::chrono::system_clock::now();
    const auto verify_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
-   std::cout << "\n>> Number of nodes = " << NodeNum << "\n";
+   std::cout << "\n >> Number of nodes = " << NodeNum << "\n";
 
-   std::cout <<
-      " >> Total Time = " << std::fixed << std::setprecision( 2 ) << sort_time + remove_time + build_time + verify_time
-      << "\n >> Sort Time = " << sort_time << "\n >> Remove Time = " << remove_time
-      << "\n >> Build Time = " << build_time << "\n >> Verify Time = " << verify_time << "\n\n";
+   std::cout << std::fixed << std::setprecision( 2 )
+      << " >> Total Time = "  << sort_time + remove_time + build_time + verify_time << " sec."
+      << "\n\t* Sort Time = " << sort_time << " sec.\n\t* Remove Time = " << remove_time << " sec."
+      << "\n\t* Build Time = " << build_time << " sec.\n\t* Verify Time = " << verify_time << " sec.\n\n";
 
    for (int i = 1; i <= dim; ++i) delete [] references[i];
    delete [] references;
