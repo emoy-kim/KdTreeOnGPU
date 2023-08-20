@@ -17,7 +17,7 @@ public:
       explicit KdtreeNode(const T* tuple) : Tuple( tuple ) {}
    };
 
-   explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 4);
+   explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
 
    void create(std::vector<const T*>& coordinates);
    void print() const
@@ -53,6 +53,12 @@ private:
       int max_submit_depth,
       int depth
    ) const;
+   [[nodiscard]] static bool isInside(
+      const KdtreeNode* node,
+      const std::vector<T>& lower,
+      const std::vector<T>& upper,
+      const std::vector<bool>& enable
+   );
    [[nodiscard]] static std::list<KdtreeNode*> search(KdtreeNode* node, const TVec& query, T radius, int depth);
    void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
