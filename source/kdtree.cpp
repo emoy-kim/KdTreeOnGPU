@@ -546,13 +546,12 @@ template<typename T, int dim>
 bool Kdtree<T, dim>::isInside(
    const KdtreeNode* node,
    const TVec& lower,
-   const TVec& upper,
-   const std::vector<bool>& enable
+   const TVec& upper
 )
 {
    bool inside = true;
    for (int i = 0; i < dim; ++i) {
-      if (enable[i] && (lower[i] > node->Tuple[i] || upper[i] < node->Tuple[i])) {
+      if (lower[i] > node->Tuple[i] || upper[i] < node->Tuple[i]) {
          inside = false;
          break;
       }
@@ -567,17 +566,16 @@ void Kdtree<T, dim>::search(
    const TVec& lower,
    const TVec& upper,
    const std::vector<int>& permutation,
-   const std::vector<bool>& enable,
    int depth
 )
 {
    const int axis = permutation[depth];
-   if (isInside( node, lower, upper, enable )) found.push_front( node );
+   if (isInside( node, lower, upper )) found.push_front( node );
 
    const bool search_left = node->LeftChild != nullptr &&
-      (compareSuperKey( node->Tuple, glm::value_ptr( lower ), axis ) >= 0 || !enable[axis]);
+      (compareSuperKey( node->Tuple, glm::value_ptr( lower ), axis ) >= 0);
    const bool search_right = node->RightChild != nullptr &&
-      (compareSuperKey( node->Tuple, glm::value_ptr( upper ), axis ) <= 0 || !enable[axis]);
+      (compareSuperKey( node->Tuple, glm::value_ptr( upper ), axis ) <= 0);
    if (search_left && search_right && isThreadAvailable( depth )) {
       std::list<const KdtreeNode*> left;
       auto search_future = std::async(
@@ -586,13 +584,13 @@ void Kdtree<T, dim>::search(
          {
             search(
                std::ref( left ), node->LeftChild.get(),
-               std::ref( lower ), std::ref( upper ), std::ref( permutation ), std::ref( enable ), depth + 1
+               std::ref( lower ), std::ref( upper ), std::ref( permutation ), depth + 1
             );
          }
       );
 
       std::list<const KdtreeNode*> right;
-      search( right, node->RightChild.get(), lower, upper, permutation, enable, depth + 1 );
+      search( right, node->RightChild.get(), lower, upper, permutation, depth + 1 );
 
       try { search_future.get(); }
       catch (const std::exception& e) {
@@ -605,12 +603,12 @@ void Kdtree<T, dim>::search(
    else {
       if (search_left) {
          std::list<const KdtreeNode*> left;
-         search( left, node->LeftChild.get(), lower, upper, permutation, enable, depth + 1 );
+         search( left, node->LeftChild.get(), lower, upper, permutation, depth + 1 );
          found.splice( found.end(), left );
       }
       if (search_right) {
          std::list<const KdtreeNode*> right;
-         search( right, node->RightChild.get(), lower, upper, permutation, enable, depth + 1 );
+         search( right, node->RightChild.get(), lower, upper, permutation, depth + 1 );
          found.splice( found.end(), right );
       }
    }
@@ -618,7 +616,7 @@ void Kdtree<T, dim>::search(
 
 template<typename T, int dim>
 void Kdtree<T, dim>::findNearestNeighbors(
-   std::priority_queue<E>& heap,
+   Finder& finder,
    const KdtreeNode* node,
    const TVec& query,
    int depth
@@ -626,10 +624,27 @@ void Kdtree<T, dim>::findNearestNeighbors(
 {
    const int axis = Permutation[depth];
    if (query[axis] < node->Tuple[axis]) {
-      if (node->LeftChild != nullptr) findNearestNeighbors( heap, node->LeftChild.get(), query, depth + 1 );
+      if (node->LeftChild != nullptr) findNearestNeighbors( finder, node->LeftChild.get(), query, depth + 1 );
 
-      const T distance = node->Tuple[axis] - query[axis];
+      const T d = node->Tuple[axis] - query[axis];
+      if (d * d <= finder.getMaxSquaredDistance() || !finder.isFull()) {
+         if (node->RightChild != nullptr) findNearestNeighbors( finder, node->RightChild.get(), query, depth + 1 );
+         finder.add( node, query );
+      }
+   }
+   else if (query[axis] > node->Tuple[axis]) {
+      if (node->RightChild != nullptr) findNearestNeighbors( finder, node->RightChild.get(), query, depth + 1 );
 
+      const T d = node->Tuple[axis] - query[axis];
+      if (d * d <= finder.getMaxSquaredDistance() || !finder.isFull()) {
+         if (node->LeftChild != nullptr) findNearestNeighbors( finder, node->LeftChild.get(), query, depth + 1 );
+         finder.add( node, query );
+      }
+   }
+   else {
+      if (node->LeftChild != nullptr) findNearestNeighbors( finder, node->LeftChild.get(), query, depth + 1 );
+      if (node->RightChild != nullptr) findNearestNeighbors( finder, node->RightChild.get(), query, depth + 1 );
+      finder.add( node, query );
    }
 }
 

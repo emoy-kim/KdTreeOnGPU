@@ -19,6 +19,35 @@ public:
 
    using E = std::pair<T, const KdtreeNode*>;
 
+   struct Finder
+   {
+      int CurrentDepth;
+      int RequestedDepth;
+      std::priority_queue<E> Heap;
+
+      explicit Finder(int requested_depth) : CurrentDepth( 0 ), RequestedDepth( requested_depth ) {}
+
+      [[nodiscard]] bool isFull() const { return CurrentDepth >= RequestedDepth; }
+      [[nodiscard]] T getMaxSquaredDistance() const { return Heap.empty() ? 0 : Heap.top().first; }
+      void add(const KdtreeNode* node, const TVec& query)
+      {
+         T squared_distance = node->Tuple[0] - query[0];
+         squared_distance *= squared_distance;
+         for (int i = 1; i < dim; ++i) {
+            const T x = node->Tuple[i] - query[i];
+            squared_distance += x * x;
+         }
+         if (!isFull()) {
+            Heap.push( std::make_pair( squared_distance, node ) );
+            CurrentDepth++;
+         }
+         else if (squared_distance < getMaxSquaredDistance()) {
+            Heap.pop();
+            Heap.push( std::make_pair( squared_distance, node ) );
+         }
+      }
+   };
+
    explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
 
    void create(std::vector<const T*>& coordinates);
@@ -26,21 +55,15 @@ public:
    [[nodiscard]] std::list<const KdtreeNode*> search(const TVec& query, T search_radius) const
    {
       std::list<const KdtreeNode*> found;
-      if (Root != nullptr) {
-         search(
-            found, Root.get(),
-            query - search_radius, query + search_radius,
-            Permutation, std::vector<bool>(dim, true), 0
-         );
-      }
+      if (Root != nullptr) search( found, Root.get(), query - search_radius, query + search_radius, Permutation, 0 );
       return found;
    }
    [[nodiscard]] std::forward_list<E> findNearestNeighbors(const TVec& query, int neighbor_num) const
    {
       std::forward_list<E> found;
-      std::priority_queue<E> heap;
-      if (Root != nullptr) findNearestNeighbors( heap, Root.get(), query, 0 );
-      for (; !heap.empty(); heap.pop()) found.emplace_front( heap.top() );
+      Finder finder(neighbor_num);
+      if (Root != nullptr) findNearestNeighbors( finder, Root.get(), query, 0 );
+      for (; !finder.Heap.empty(); finder.Heap.pop()) found.emplace_front( finder.Heap.top() );
       return found;
    }
 
@@ -68,8 +91,7 @@ private:
    [[nodiscard]] static bool isInside(
       const KdtreeNode* node,
       const TVec& lower,
-      const TVec& upper,
-      const std::vector<bool>& enable
+      const TVec& upper
    );
    static void prepareMultiThreading(int thread_num);
    static void sortReferenceAscending(
@@ -119,11 +141,10 @@ private:
       const TVec& lower,
       const TVec& upper,
       const std::vector<int>& permutation,
-      const std::vector<bool>& enable,
       int depth
    );
    void findNearestNeighbors(
-      std::priority_queue<E>& heap,
+      Finder& finder,
       const KdtreeNode* node,
       const TVec& query,
       int depth

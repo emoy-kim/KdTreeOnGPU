@@ -15,8 +15,7 @@ int main()
 
    constexpr float search_radius = 2.0f;
    const glm::vec3 query(4.0f, 3.0f, 1.0f);
-   const glm::vec3 lower = query - search_radius;
-   const glm::vec3 upper = query + search_radius;
+
    auto start_time = std::chrono::system_clock::now();
    const auto list = kdtree.search( query, search_radius );
    auto end_time = std::chrono::system_clock::now();
@@ -27,5 +26,18 @@ int main()
    std::cout << ">> List of k-d nodes within " << search_radius << "-unit search radius\n   ";
    for (const auto& p : list) std::cout << "(" << p->Tuple[0] << ", " << p->Tuple[1] << ", " << p->Tuple[2] << ") ";
    std::cout << "\n";
+
+   start_time = std::chrono::system_clock::now();
+   const auto nn_list = kdtree.findNearestNeighbors( query, 5 );
+   end_time = std::chrono::system_clock::now();
+   const auto nn_search_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
+   std::cout << "\n>> " << std::distance( nn_list.begin(), nn_list.end() ) << " nearest neighbors of (" <<
+      query.x << ", " << query.y << ", " << query.z << ") in all dimensions, Search Time: " << nn_search_time << "\n";
+   std::cout << ">> List of nearest neighbors\n";
+   for (const auto& p : nn_list) {
+      std::cout << "   (" << p.second->Tuple[0] << ", " << p.second->Tuple[1] << ", " << p.second->Tuple[2] << ") in "
+         << p.first << "\n";
+   }
    return 0;
 }
