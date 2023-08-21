@@ -14,10 +14,20 @@ set(
 
 configure_file(include/project_constants.h.in ${PROJECT_BINARY_DIR}/project_constants.h @ONLY)
 
+find_package(CUDA)
+
 include_directories("include")
 include_directories("${CMAKE_SOURCE_DIR}/3rd_party/glm")
 
-add_executable(KdTreeOnGPU ${SOURCE_FILES})
+if(CUDA_FOUND)
+	set(
+      CUDA_SOURCE_FILES
+        source/cuda/kdtree.cu
+   )
+   cuda_add_executable(KdTreeOnGPU ${SOURCE_FILES} ${CUDA_SOURCE_FILES})
+else()
+	add_executable(KdTreeOnGPU ${SOURCE_FILES})
+endif()
 
 target_link_libraries(
      KdTreeOnGPU
