@@ -7,7 +7,7 @@ Kdtree<T, dim>::Kdtree(const std::vector<TVec>& vertices, int thread_num) : Node
    coordinates.reserve( vertices.size() );
    for (const auto& v : vertices) coordinates.emplace_back( glm::value_ptr( v ) );
 
-   prepareMultiThreading( thread_num );
+   if (MaxThreadNum == 0) prepareMultiThreading( thread_num );
    create( coordinates );
 }
 

@@ -69,8 +69,8 @@ public:
 
 private:
    inline static constexpr int InsertionSortThreshold = 15;
-   inline static int MaxThreadNum;
-   inline static int MaxSubmitDepth;
+   inline static int MaxThreadNum = 0;
+   inline static int MaxSubmitDepth = -1;
 
    int NodeNum;
    std::vector<int> Permutation;
