@@ -6,8 +6,6 @@ template<typename T = float, int dim = 3>
 class Kdtree final
 {
 public:
-   using TVec = glm::vec<dim, T, glm::defaultp>;
-
    struct KdtreeNode
    {
       const T* Tuple;
@@ -18,6 +16,7 @@ public:
    };
 
    using E = std::pair<T, const KdtreeNode*>;
+   using TVec = glm::vec<dim, T, glm::defaultp>;
 
    struct Finder
    {
@@ -49,6 +48,7 @@ public:
    };
 
    explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
+   ~Kdtree() = default;
 
    void create(std::vector<const T*>& coordinates);
    void print() const { if (Root != nullptr) print( Root.get(), 0 ); }

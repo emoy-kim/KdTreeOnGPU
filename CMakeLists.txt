@@ -22,9 +22,10 @@ include_directories("${CMAKE_SOURCE_DIR}/3rd_party/glm")
 if(CUDA_FOUND)
 	set(
       CUDA_SOURCE_FILES
-			source/cuda/kdtree_cuda.cpp
-   )
+			source/cuda/kdtree.cu
+	)
    cuda_add_executable(KdTreeOnGPU ${SOURCE_FILES} ${CUDA_SOURCE_FILES})
+	target_compile_definitions(KdTreeOnGPU PRIVATE USE_CUDA)
 else()
 	add_executable(KdTreeOnGPU ${SOURCE_FILES})
 endif()

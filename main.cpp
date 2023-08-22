@@ -1,5 +1,5 @@
 #include "kdtree.h"
-#include "cuda/kdtree_cuda.h"
+#include "cuda/kdtree.cuh"
 
 void testMultithreading(const std::vector<glm::vec3>& coordinates)
 {
