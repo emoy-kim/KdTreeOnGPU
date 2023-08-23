@@ -1,6 +1,9 @@
 #pragma once
 
-#include "base.h"
+#include <iostream>
+#include <sstream>
+#include <array>
+#include <vector>
 #include <cuda_runtime.h>
 
 #define CHECK_CUDA(cu_result) \
@@ -13,48 +16,68 @@ do { \
    } \
 } while(0)
 
+typedef float node_type;
+
 namespace cuda
 {
    constexpr int ThreadNum = 512;
    constexpr int ThreadBlockNum = 32;
+   constexpr int SampleStride = 128;
 
-   template<typename T = float, int dim = 3>
+   struct KdtreeNode
+   {
+      int Index;
+      int LeftChildIndex;
+      int RightChildIndex;
+
+      explicit KdtreeNode(int index) : Index( index ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
+   };
+
    class KdtreeCUDA final
    {
    public:
-      using TVec = glm::vec<dim, T, glm::defaultp>;
+      explicit KdtreeCUDA(const node_type* vertices, int size, int dim);
 
-      struct KdtreeNode
-      {
-         int Index;
-         int LeftChildIndex;
-         int RightChildIndex;
-
-         explicit KdtreeNode(int index) : Index( index ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
-      };
-
-      explicit KdtreeCUDA(const std::vector<TVec>& vertices);
-
-      void create(const std::vector<TVec>& coordinates);
+      void create(const node_type* coordinates, int size);
 
    private:
       inline static int DeviceNum = 0;
 
+      struct SortGPU
+      {
+         uint MaxSampleNum;
+         uint* RanksA;
+         uint* RanksB;
+         uint* LimitsA;
+         uint* LimitsB;
+         int* Reference;
+         int* Buffer;
+
+         SortGPU() :
+            MaxSampleNum( 0 ), RanksA( nullptr ), RanksB( nullptr ), LimitsA( nullptr ), LimitsB( nullptr ),
+            Reference( nullptr ), Buffer( nullptr ) {}
+      };
+
+      const int Dim;
       int NodeNum;
-      KdtreeNode* Root;
       std::vector<int> DeviceID;
+      std::vector<int**> Buffers;
+      std::vector<int**> References;
+      std::vector<SortGPU> Sort;
+      std::vector<KdtreeNode*> Root;
       std::vector<cudaStream_t> Streams;
       std::vector<cudaEvent_t> SyncEvents;
-      std::vector<T*> CoordinatesDevicePtr;
+      std::vector<node_type*> CoordinatesDevicePtr;
 
+      static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
+      void sync() const { for (int i = 0; i < DeviceNum; ++i) CHECK_CUDA( cudaStreamSynchronize( Streams[i] ) ); }
       [[nodiscard]] static bool isP2PCapable(const cudaDeviceProp& properties)
       {
          return properties.major >= 2; // Only boards based on Fermi can support P2P
       }
       void prepareCUDA();
-      void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
-      void initialize(const T* coordinates, int size, int device_id);
+      void initialize(const node_type* coordinates, int size, int device_id);
+      void initializeReference(int size, int axis, int device_id);
+      void sort(int* end, int size);
    };
-
-   template class KdtreeCUDA<float, 3>;
 }
