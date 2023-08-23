@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <cassert>
 #include <sstream>
 #include <array>
 #include <vector>
@@ -23,6 +24,7 @@ namespace cuda
    constexpr int ThreadNum = 512;
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
+   constexpr uint SharedSizeLimit = 1024;
 
    struct KdtreeNode
    {
@@ -51,7 +53,7 @@ namespace cuda
          uint* LimitsA;
          uint* LimitsB;
          int* Reference;
-         int* Buffer;
+         node_type* Buffer;
 
          SortGPU() :
             MaxSampleNum( 0 ), RanksA( nullptr ), RanksB( nullptr ), LimitsA( nullptr ), LimitsB( nullptr ),
@@ -61,12 +63,12 @@ namespace cuda
       const int Dim;
       int NodeNum;
       std::vector<int> DeviceID;
-      std::vector<int**> Buffers;
-      std::vector<int**> References;
       std::vector<SortGPU> Sort;
       std::vector<KdtreeNode*> Root;
       std::vector<cudaStream_t> Streams;
       std::vector<cudaEvent_t> SyncEvents;
+      std::vector<int**> References;
+      std::vector<node_type**> Buffers;
       std::vector<node_type*> CoordinatesDevicePtr;
 
       static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
@@ -78,6 +80,7 @@ namespace cuda
       void prepareCUDA();
       void initialize(const node_type* coordinates, int size, int device_id);
       void initializeReference(int size, int axis, int device_id);
+      void sortPartially(int source_index, int target_index, int start_offset, int size, int axis, int device_id);
       void sort(int* end, int size);
    };
 }
