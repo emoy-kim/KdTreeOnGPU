@@ -24,7 +24,7 @@ namespace cuda
    constexpr int ThreadNum = 512;
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
-   constexpr uint SharedSizeLimit = 1024;
+   constexpr int SharedSizeLimit = 1024;
 
    struct KdtreeNode
    {
@@ -47,11 +47,11 @@ namespace cuda
 
       struct SortGPU
       {
-         uint MaxSampleNum;
-         uint* RanksA;
-         uint* RanksB;
-         uint* LimitsA;
-         uint* LimitsB;
+         int MaxSampleNum;
+         int* RanksA;
+         int* RanksB;
+         int* LimitsA;
+         int* LimitsB;
          int* Reference;
          node_type* Buffer;
 
