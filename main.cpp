@@ -1,8 +1,16 @@
 #include "kdtree.h"
 #include "cuda/kdtree.cuh"
 
-void testMultithreading(const std::vector<glm::vec3>& coordinates)
+void testMultithreading()
 {
+   const std::vector<glm::vec3> coordinates = {
+      { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
+      { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
+      { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
+      { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
+      { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
+   };
+
    Kdtree kdtree(coordinates);
    kdtree.print();
 
@@ -34,25 +42,25 @@ void testMultithreading(const std::vector<glm::vec3>& coordinates)
    }
 }
 
-void testCUDA(const std::vector<glm::vec3>& coordinates)
+void testCUDA()
 {
-   const auto size = static_cast<int>(coordinates.size());
-   cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), size, 3);
+   constexpr int n = 1024 * 128;
+   std::vector<glm::vec3> coordinates;
+   for (int i = 0; i < n; ++i) {
+      coordinates.emplace_back(
+         getRandomValue( -1000.0f, 1000.0f ),
+         getRandomValue( -1000.0f, 1000.0f ),
+         getRandomValue( -1000.0f, 1000.0f )
+      );
+   }
 
+   cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), n, 3);
 
 }
 
 int main()
 {
-   const std::vector<glm::vec3> coordinates = {
-      { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
-      { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
-      { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
-      { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
-      { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
-   };
-
-   //testMultithreading( coordinates );
-   testCUDA( coordinates );
+   //testMultithreading();
+   testCUDA();
    return 0;
 }

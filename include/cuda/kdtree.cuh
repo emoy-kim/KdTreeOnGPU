@@ -39,6 +39,7 @@ namespace cuda
    {
    public:
       explicit KdtreeCUDA(const node_type* vertices, int size, int dim);
+      ~KdtreeCUDA();
 
       void create(const node_type* coordinates, int size);
 
@@ -67,10 +68,11 @@ namespace cuda
       std::vector<KdtreeNode*> Root;
       std::vector<cudaStream_t> Streams;
       std::vector<cudaEvent_t> SyncEvents;
-      std::vector<int**> References;
-      std::vector<node_type**> Buffers;
+      std::vector<std::vector<int*>> References;
+      std::vector<std::vector<node_type*>> Buffers;
       std::vector<node_type*> CoordinatesDevicePtr;
 
+      static void checkError() { if (cudaGetLastError() != cudaSuccess) throw std::runtime_error( "cuda error!" ); }
       static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
       void sync() const { for (int i = 0; i < DeviceNum; ++i) CHECK_CUDA( cudaStreamSynchronize( Streams[i] ) ); }
       [[nodiscard]] static bool isP2PCapable(const cudaDeviceProp& properties)
