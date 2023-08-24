@@ -17,6 +17,20 @@ do { \
    } \
 } while(0)
 
+#ifdef NDEBUG
+#define CHECK_KERNEL
+#else
+#define CHECK_KERNEL \
+do { \
+   if ((cudaGetLastError()) == cudaSuccess) ; \
+   else { \
+      std::ostringstream buffer; \
+      buffer << "CUDA KERNEL ERROR CODE: " << (cudaGetLastError()) << "\n"; \
+      throw std::runtime_error( buffer.str() ); \
+   } \
+} while(0)
+#endif
+
 typedef float node_type;
 
 namespace cuda
@@ -72,7 +86,6 @@ namespace cuda
       std::vector<std::vector<node_type*>> Buffers;
       std::vector<node_type*> CoordinatesDevicePtr;
 
-      static void checkError() { if (cudaGetLastError() != cudaSuccess) throw std::runtime_error( "cuda error!" ); }
       static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
       void sync() const { for (int i = 0; i < DeviceNum; ++i) CHECK_CUDA( cudaStreamSynchronize( Streams[i] ) ); }
       [[nodiscard]] static bool isP2PCapable(const cudaDeviceProp& properties)
@@ -83,6 +96,7 @@ namespace cuda
       void initialize(const node_type* coordinates, int size, int device_id);
       void initializeReference(int size, int axis, int device_id);
       void sortPartially(int source_index, int target_index, int start_offset, int size, int axis, int device_id);
+      [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
       void sort(int* end, int size);
    };
 }

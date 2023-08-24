@@ -175,6 +175,7 @@ namespace cuda
          }
       }
       cuInitializeReference<<<ThreadBlockNum, ThreadNum, 0, Streams[device_id]>>>( references[axis], size );
+      CHECK_KERNEL;
    }
 
    __global__
@@ -385,12 +386,9 @@ namespace cuda
       if (i < sample_a) {
          int x = 0;
          if (sample_b != 0) {
-            int s = step;
-            const int stride = getNextPowerOfTwo( sample_b );
-            while (s > 0) {
-               const int j = min( x + stride, sample_b );
+            for (int s = getNextPowerOfTwo( sample_b ); s > 0; s >>= 1) {
+               const int j = min( x + s, sample_b );
                if (ranks[sample_a + j - 1] < ranks[i]) x = j;
-               s >>= 1;
             }
          }
          limits[x + i] = ranks[i];
@@ -398,12 +396,9 @@ namespace cuda
       if (i < sample_b) {
          int x = 0;
          if (sample_a != 0) {
-            int s = step;
-            const int stride = getNextPowerOfTwo( sample_a );
-            while (s > 0) {
-               const int j = min( x + stride, sample_a );
+            for (int s = getNextPowerOfTwo( sample_a ); s > 0; s >>= 1) {
+               const int j = min( x + s, sample_a );
                if (ranks[j - 1] <= ranks[sample_a + i]) x = j;
-               s >>= 1;
             }
          }
          limits[x + i] = ranks[sample_a + i];
@@ -546,6 +541,7 @@ namespace cuda
             axis,
             Dim
          );
+         CHECK_KERNEL;
       }
       if (Buffers[device_id][target_index] == nullptr) {
          CHECK_CUDA(
@@ -583,6 +579,7 @@ namespace cuda
          References[device_id][source_index] + start_offset, Buffers[device_id][source_index],
          CoordinatesDevicePtr[device_id], axis, Dim
       );
+      CHECK_KERNEL;
 
       for (int step = SharedSizeLimit; step < size; step <<= 1) {
          const int last = size % (2 * step);
@@ -592,12 +589,17 @@ namespace cuda
             in_reference, in_buffer, CoordinatesDevicePtr[device_id],
             step, size, axis, Dim, thread_num
          );
+         CHECK_KERNEL;
+
          cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
             Sort[device_id].LimitsA, Sort[device_id].RanksA, step, size, thread_num
          );
+         CHECK_KERNEL;
+
          cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
             Sort[device_id].LimitsB, Sort[device_id].RanksB, step, size, thread_num
          );
+         CHECK_KERNEL;
 
          const int merge_pairs = last > step ? getSampleNum( size ) : (size - last) / SampleStride;
          cuMergeReferences<<<merge_pairs, SampleStride, 0, Streams[device_id]>>>(
@@ -606,6 +608,7 @@ namespace cuda
             Sort[device_id].LimitsA, Sort[device_id].LimitsB,
             step, size, axis, Dim
          );
+         CHECK_KERNEL;
 
          if (last <= step) {
             CHECK_CUDA(
@@ -625,6 +628,12 @@ namespace cuda
          std::swap( in_reference, out_reference );
          std::swap( in_buffer, out_buffer );
       }
+   }
+
+   int KdtreeCUDA::swapBalanced(int source_index, int start_offset, int size, int axis)
+   {
+      setDevice( 0 );
+
    }
 
    void KdtreeCUDA::sort(int* end, int size)
@@ -649,6 +658,9 @@ namespace cuda
          }
          sync();
 
+         const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
+         std::cout << " >> Pivot = " << pivot << "\n";
+         sync();
       }
       else {
          setDevice( 0 );
