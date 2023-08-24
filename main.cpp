@@ -38,6 +38,8 @@ void testCUDA(const std::vector<glm::vec3>& coordinates)
 {
    const auto size = static_cast<int>(coordinates.size());
    cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), size, 3);
+
+
 }
 
 int main()

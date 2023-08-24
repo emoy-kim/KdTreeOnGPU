@@ -5,7 +5,7 @@ namespace cuda
    __host__ __device__
    inline int divideUp(int a, int b)
    {
-      return a % b == 0 ? a / b : (a + b - 1) / b;
+      return (a + b - 1) / b;
    }
 
    __host__ __device__
@@ -207,7 +207,7 @@ namespace cuda
 
       int i = 0;
       while (step > 0) {
-         int j = min( i + step, length );
+         const int j = min( i + step, length );
          const node_type t = compareSuperKey(
             buffer[j - 1], value, coordinates + reference[j - 1] * dim, coordinates + index * dim, axis, dim
          );
@@ -234,7 +234,7 @@ namespace cuda
 
       int i = 0;
       while (step > 0) {
-         int j = min( i + step, length );
+         const int j = min( i + step, length );
          const node_type t = compareSuperKey(
             buffer[j - 1], value, coordinates + reference[j - 1] * dim, coordinates + index * dim, axis, dim
          );
@@ -344,6 +344,158 @@ namespace cuda
       }
    }
 
+   __global__
+   void cuMergeRanksAndIndices(int* limits, const int* ranks, int step, int size, int thread_num)
+   {
+      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      if (index >= thread_num) return;
+
+      const int i = index % (step / SampleStride - 1);
+      const int segment_base = (index - i) * 2 * SampleStride;
+      ranks += (index - i) * 2;
+      limits += (index - i) * 2;
+
+      const int element_a = step;
+      const int element_b = min( step, size - step - segment_base );
+      const int sample_a = getSampleNum( element_a );
+      const int sample_b = getSampleNum( element_b );
+      if (i < sample_a) {
+         int x = 0;
+         if (sample_b != 0) {
+            const int stride = getNextPowerOfTwo( sample_b );
+            while (step > 0) {
+               const int j = min( x + stride, sample_b );
+               if (ranks[sample_a + j - 1] < ranks[i]) x = j;
+               step >>= 1;
+            }
+         }
+         limits[x + i] = ranks[i];
+      }
+      if (i < sample_b) {
+         int x = 0;
+         if (sample_a != 0) {
+            const int stride = getNextPowerOfTwo( sample_a );
+            while (step > 0) {
+               const int j = min( x + stride, sample_a );
+               if (ranks[j - 1] <= ranks[sample_a + i]) x = j;
+               step >>= 1;
+            }
+         }
+         limits[x + i] = ranks[sample_a + i];
+      }
+   }
+
+   __device__
+   void merge(
+      int* reference,
+      node_type* buffer,
+      const node_type* coordinates,
+      int length_a,
+      int length_b,
+      int axis,
+      int dim
+   )
+   {
+      const int* reference_a = reference;
+      const int* reference_b = reference + SampleStride;
+      const node_type* buffer_a = buffer;
+      const node_type* buffer_b = buffer + SampleStride;
+
+      int index_a, index_b, x, y;
+      node_type value_a, value_b;
+      if (threadIdx.x < length_a) {
+         value_a = buffer_a[threadIdx.x];
+         index_a = reference_a[threadIdx.x];
+         x = static_cast<int>(threadIdx.x) +
+            searchExclusively( index_a, value_a, reference_b, buffer_b, coordinates, length_b, SampleStride, axis, dim );
+      }
+      if (threadIdx.x < length_b) {
+         value_b = buffer_b[threadIdx.x];
+         index_b = reference_b[threadIdx.x];
+         y = static_cast<int>(threadIdx.x) +
+            searchInclusively( index_b, value_b, reference_a, buffer_a, coordinates, length_a, SampleStride, axis, dim );
+      }
+
+      __syncthreads();
+      if (threadIdx.x < length_a) {
+         buffer[x] = value_a;
+         reference[x] = index_a;
+      }
+      if (threadIdx.x < length_b) {
+         buffer[y] = value_b;
+         reference[y] = index_b;
+      }
+   }
+
+   __global__
+   void cuMergeReferences(
+      int* target_reference,
+      node_type* target_buffer,
+      const int* source_reference,
+      const node_type* source_buffer,
+      const node_type* coordinates,
+      const int* limits_a,
+      const int* limits_b,
+      int step,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+      __shared__ int reference[2 * SampleStride];
+      __shared__ node_type buffer[2 * SampleStride];
+
+      const int index = static_cast<int>(blockIdx.x) & (2 * step / SampleStride - 1);
+      const int segment_base = (static_cast<int>(blockIdx.x) - index) * SampleStride;
+      target_buffer += segment_base;
+      target_reference += segment_base;
+      source_buffer += segment_base;
+      source_reference += segment_base;
+
+      __shared__ int start_source_a, start_source_b;
+      __shared__ int start_target_a, start_target_b;
+      __shared__ int length_a, length_b;
+
+      if (threadIdx.x == 0) {
+         const int element_a = step;
+         const int element_b = min( step, size - step - segment_base );
+         const int sample_a = getSampleNum( element_a );
+         const int sample_b = getSampleNum( element_b );
+         const int sample_num = sample_a + sample_b;
+         start_source_a = limits_a[blockIdx.x];
+         start_source_b = limits_b[blockIdx.x];
+         const int end_source_a = index + 1 < sample_num ? limits_a[blockIdx.x + 1] : element_a;
+         const int end_source_b = index + 1 < sample_num ? limits_b[blockIdx.x + 1] : element_b;
+         length_a = end_source_a - start_source_a;
+         length_b = end_source_b - start_source_b;
+         start_target_a = start_source_a + start_source_b;
+         start_target_b = start_target_a + length_a;
+      }
+
+      __syncthreads();
+      if (threadIdx.x < length_a) {
+         buffer[threadIdx.x] = source_buffer[start_source_a + threadIdx.x];
+         reference[threadIdx.x] = source_reference[start_source_a + threadIdx.x];
+      }
+      if (threadIdx.x < length_b) {
+         buffer[threadIdx.x + SampleStride] = source_buffer[start_source_b + threadIdx.x + step];
+         reference[threadIdx.x + SampleStride] = source_reference[start_source_b + threadIdx.x + step];
+      }
+
+      __syncthreads();
+      merge( reference, buffer, coordinates, length_a, length_b, axis, dim );
+
+      __syncthreads();
+      if (threadIdx.x < length_a) {
+         target_buffer[start_target_a + threadIdx.x] = buffer[threadIdx.x];
+         target_reference[start_target_a + threadIdx.x] = reference[threadIdx.x];
+      }
+      if (threadIdx.x < length_b) {
+         target_buffer[start_target_b + threadIdx.x] = buffer[length_a + threadIdx.x];
+         target_reference[start_target_b + threadIdx.x] = reference[length_a + threadIdx.x];
+      }
+   }
+
    void KdtreeCUDA::sortPartially(
       int source_index,
       int target_index,
@@ -415,7 +567,20 @@ namespace cuda
             in_reference, in_buffer, CoordinatesDevicePtr[device_id],
             step, size, axis, Dim, thread_num
          );
+         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
+            Sort[device_id].LimitsA, Sort[device_id].RanksA, step, size, thread_num
+         );
+         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
+            Sort[device_id].LimitsB, Sort[device_id].RanksB, step, size, thread_num
+         );
 
+         const int merge_pairs = last > step ? getSampleNum( size ) : (size - last) / SampleStride;
+         cuMergeReferences<<<merge_pairs, SampleStride, 0, Streams[device_id]>>>(
+            out_reference, out_buffer,
+            in_reference, in_buffer, CoordinatesDevicePtr[device_id],
+            Sort[device_id].LimitsA, Sort[device_id].LimitsB,
+            step, size, axis, Dim
+         );
       }
    }
 
