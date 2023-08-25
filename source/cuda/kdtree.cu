@@ -111,8 +111,8 @@ namespace cuda
    __global__
    void cuInitialize(KdtreeNode* root, int size)
    {
-      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
       for (int i = index; i < size; i += step) {
          root[i].Index = i;
          root[i].LeftChildIndex = -1;
@@ -158,8 +158,8 @@ namespace cuda
    __global__
    void cuInitializeReference(int* reference, int size)
    {
-      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
       for (int i = index; i < size; i += step) {
          reference[i] = i;
       }
@@ -188,8 +188,8 @@ namespace cuda
       int dim
    )
    {
-      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
       for (int i = index; i < size; i += step) {
          target[i] = coordinates[reference[i] * dim + axis];
       }
@@ -336,7 +336,7 @@ namespace cuda
       int thread_num
    )
    {
-      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       if (index >= thread_num) return;
 
       const int i = index & (step / SampleStride - 1);
@@ -371,7 +371,7 @@ namespace cuda
    __global__
    void cuMergeRanksAndIndices(int* limits, const int* ranks, int step, int size, int thread_num)
    {
-      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       if (index >= thread_num) return;
 
       const int i = index & (step / SampleStride - 1);
@@ -630,10 +630,130 @@ namespace cuda
       }
    }
 
+   // reference: Comparison Based Sorting for Systems with Multiple GPUs, 2013
+   __device__ int selected_pivot;
+
+   __global__
+   void cuSelectPivot(
+      const int* reference_a,
+      const node_type* buffer_a,
+      const node_type* coordinates_a,
+      const int* reference_b,
+      const node_type* buffer_b,
+      const node_type* coordinates_b,
+      int length,
+      int axis,
+      int dim
+   )
+   {
+      if (length == 0) {
+         selected_pivot = 0;
+         return;
+      }
+
+      int pivot = length / 2;
+      for (int step = pivot / 2; step > 0; step >>= 1) {
+         const node_type t = compareSuperKey(
+            buffer_a[length - pivot - 1], buffer_b[pivot],
+            coordinates_a + reference_a[length - pivot - 1] * dim, coordinates_b + reference_b[pivot] * dim,
+            axis, dim
+         );
+         if (t < 0) {
+            const node_type x = compareSuperKey(
+               buffer_a[length - pivot - 2], buffer_b[pivot + 1],
+               coordinates_a + reference_a[length - pivot - 2] * dim, coordinates_b + reference_b[pivot + 1] * dim,
+               axis, dim
+            );
+            const node_type y = compareSuperKey(
+               buffer_a[length - pivot], buffer_b[pivot - 1],
+               coordinates_a + reference_a[length - pivot] * dim, coordinates_b + reference_b[pivot - 1] * dim,
+               axis, dim
+            );
+            if (x < 0 && y > 0) {
+               selected_pivot = pivot;
+               return;
+            }
+            else pivot -= step;
+         }
+         else pivot += step;
+      }
+
+      if (pivot == 1 &&
+          compareSuperKey(
+            buffer_a[length - 1], buffer_b[0],
+            coordinates_a + reference_a[length - 1] * dim, coordinates_b + reference_b[0] * dim,
+            axis, dim
+          ) < 0) {
+         pivot = 0;
+      }
+      else if (pivot == length - 1 &&
+               compareSuperKey(
+                  buffer_a[0], buffer_b[length - 1],
+                  coordinates_a + reference_a[0] * dim, coordinates_b + reference_b[length - 1] * dim,
+                  axis, dim
+               ) > 0) {
+         pivot = length;
+      }
+      selected_pivot = pivot;
+   }
+
+   __global__
+   void cuSwapPivot(
+      node_type* coordinates_a,
+      node_type* buffer_a,
+      node_type* coordinates_b,
+      node_type* buffer_b,
+      const int* reference_a,
+      const int* reference_b,
+      int length,
+      int axis,
+      int dim
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      int pivot = selected_pivot;
+      reference_a += length - pivot;
+      buffer_a += length - pivot;
+      for (int i = index; i < pivot * dim; i += step) {
+         const int p = i / dim;
+         const int swap = i - p * dim;
+         const int index_a = reference_a[p] * dim + swap;
+         const int index_b = reference_b[p] * dim + swap;
+         const node_type a = coordinates_a[index_a];
+         const node_type b = coordinates_b[index_b];
+         coordinates_a[index_a] = b;
+         coordinates_b[index_b] = a;
+         if (swap == axis) {
+            buffer_a[p] = b;
+            buffer_b[p] = a;
+         }
+      }
+   }
+
    int KdtreeCUDA::swapBalanced(int source_index, int start_offset, int size, int axis)
    {
       setDevice( 0 );
+      cuSelectPivot<<<1, 1, 0, Streams[0]>>>(
+         References[0][source_index] + start_offset, Buffers[0][source_index], CoordinatesDevicePtr[0],
+         References[1][source_index] + start_offset, Buffers[1][source_index], CoordinatesDevicePtr[1],
+         size, axis, Dim
+      );
+      CHECK_KERNEL;
 
+      int pivot;
+      CHECK_CUDA(
+         cudaMemcpyFromSymbolAsync( &pivot, selected_pivot, sizeof( pivot ), 0, cudaMemcpyDeviceToHost, Streams[0] )
+      );
+
+      cuSwapPivot<<<ThreadBlockNum * ThreadNum, 1024, 0, Streams[0]>>>(
+         CoordinatesDevicePtr[0], Buffers[0][source_index],
+         CoordinatesDevicePtr[1], Buffers[1][source_index],
+         References[0][source_index] + start_offset, References[1][source_index] + start_offset,
+         size, axis, Dim
+      );
+      CHECK_KERNEL;
+      return pivot;
    }
 
    void KdtreeCUDA::sort(int* end, int size)
