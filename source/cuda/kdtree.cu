@@ -902,7 +902,19 @@ namespace cuda
       CHECK_KERNEL;
    }
 
-   void KdtreeCUDA::sort(int* end, int size)
+   int KdtreeCUDA::removeDuplicates(
+      int source_index,
+      int target_index,
+      int size,
+      int axis,
+      Device* other_device,
+      int other_size
+   )
+   {
+
+   }
+
+   void KdtreeCUDA::sort(std::vector<int>& end, int size)
    {
       const int max_sample_num = size / SampleStride + 1;
       for (auto& device : Devices) {
@@ -932,16 +944,19 @@ namespace cuda
          mergeSwap( Devices[1], Dim, 0, pivot, size_per_device );
          sync();
 
-         for (int i = 0; i < DeviceNum; ++i) {
-
-         }
+         std::vector<std::vector<int>> ends(DeviceNum, std::vector<int>(Dim));
+         Devices[0].TupleNum = ends[0][0] = removeDuplicates( 0, Dim, size_per_device, 0 );
+         // ...
+         Devices[1].TupleNum = ends[1][0] = removeDuplicates( 0, Dim, size_per_device, 0, &Devices[0], size_per_device );
       }
       else {
          setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
             initializeReference( Devices[0], size_per_device, axis );
             sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
+            end[axis] = removeDuplicates( Dim, axis, size_per_device, axis );
          }
+         Devices[0].TupleNum = end[0];
       }
       sync();
    }
@@ -955,7 +970,7 @@ namespace cuda
       }
       cudaDeviceSynchronize();
 
-      int end[Dim];
+      std::vector<int> end(Dim);
       sort( end, size );
    }
 }

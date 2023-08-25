@@ -109,6 +109,14 @@ namespace cuda
       void sortPartially(Device& device, int source_index, int target_index, int start_offset, int size, int axis);
       [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
       void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size);
-      void sort(int* end, int size);
+      [[nodiscard]] int removeDuplicates(
+         int source_index,
+         int target_index,
+         int size,
+         int axis,
+         Device* other_device = nullptr,
+         int other_size = 0
+      );
+      void sort(std::vector<int>& end, int size);
    };
 }
