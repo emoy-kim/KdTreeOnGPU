@@ -39,6 +39,7 @@ namespace cuda
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
    constexpr int SharedSizeLimit = 1024;
+   constexpr int MergePathBlockSize = 512;
 
    struct KdtreeNode
    {
@@ -67,36 +68,47 @@ namespace cuda
          int* RanksB;
          int* LimitsA;
          int* LimitsB;
+         int* MergePath;
          int* Reference;
          node_type* Buffer;
 
          SortGPU() :
             MaxSampleNum( 0 ), RanksA( nullptr ), RanksB( nullptr ), LimitsA( nullptr ), LimitsB( nullptr ),
-            Reference( nullptr ), Buffer( nullptr ) {}
+            MergePath( nullptr ), Reference( nullptr ), Buffer( nullptr ) {}
+      };
+
+      struct Device
+      {
+         int ID;
+         int TupleNum;
+         SortGPU Sort;
+         KdtreeNode* Root;
+         cudaStream_t Stream;
+         cudaEvent_t SyncEvent;
+         std::vector<int*> Reference;
+         std::vector<node_type*> Buffer;
+         node_type* CoordinatesDevicePtr;
+
+         Device() :
+            ID( -1 ), TupleNum( 0 ), Sort(), Stream( nullptr ), SyncEvent( nullptr ), CoordinatesDevicePtr( nullptr ) {}
       };
 
       const int Dim;
       int NodeNum;
-      std::vector<int> DeviceID;
-      std::vector<SortGPU> Sort;
-      std::vector<KdtreeNode*> Root;
-      std::vector<cudaStream_t> Streams;
-      std::vector<cudaEvent_t> SyncEvents;
-      std::vector<std::vector<int*>> References;
-      std::vector<std::vector<node_type*>> Buffers;
-      std::vector<node_type*> CoordinatesDevicePtr;
+      std::vector<Device> Devices;
 
       static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
-      void sync() const { for (int i = 0; i < DeviceNum; ++i) CHECK_CUDA( cudaStreamSynchronize( Streams[i] ) ); }
+      void sync() const { for (auto& device : Devices) CHECK_CUDA( cudaStreamSynchronize( device.Stream ) ); }
       [[nodiscard]] static bool isP2PCapable(const cudaDeviceProp& properties)
       {
          return properties.major >= 2; // Only boards based on Fermi can support P2P
       }
       void prepareCUDA();
-      void initialize(const node_type* coordinates, int size, int device_id);
-      void initializeReference(int size, int axis, int device_id);
-      void sortPartially(int source_index, int target_index, int start_offset, int size, int axis, int device_id);
+      void initialize(Device& device, const node_type* coordinates, int size);
+      void initializeReference(Device& device, int size, int axis);
+      void sortPartially(Device& device, int source_index, int target_index, int start_offset, int size, int axis);
       [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
+      void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size);
       void sort(int* end, int size);
    };
 }

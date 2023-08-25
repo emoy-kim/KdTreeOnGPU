@@ -38,22 +38,22 @@ namespace cuda
 
    KdtreeCUDA::~KdtreeCUDA()
    {
-      for (int i = 0; i < DeviceNum; ++i) {
-         setDevice( i );
-         if (!References[i].empty()) {
-            for (int j = 0; j <= Dim; ++j) {
-               if (References[i][j] != nullptr) cudaFree( References[i][j] );
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         if (!device.Reference.empty()) {
+            for (int i = 0; i <= Dim; ++i) {
+               if (device.Reference[i] != nullptr) cudaFree( device.Reference[i] );
             }
          }
-         if (!Buffers[i].empty()) {
-            for (int j = 0; j <= Dim; ++j) {
-               if (Buffers[i][j] != nullptr) cudaFree( Buffers[i][j] );
+         if (!device.Buffer.empty()) {
+            for (int i = 0; i <= Dim; ++i) {
+               if (device.Buffer[i] != nullptr) cudaFree( device.Buffer[i] );
             }
          }
-         if (CoordinatesDevicePtr[i] != nullptr) cudaFree( CoordinatesDevicePtr[i] );
-         if (Root[i] != nullptr) cudaFree( Root[i] );
-         cudaEventDestroy( SyncEvents[i] );
-         cudaStreamDestroy( Streams[i] );
+         if (device.CoordinatesDevicePtr != nullptr) cudaFree( device.CoordinatesDevicePtr );
+         if (device.Root != nullptr) cudaFree( device.Root );
+         cudaEventDestroy( device.SyncEvent );
+         cudaStreamDestroy( device.Stream );
       }
    }
 
@@ -90,21 +90,15 @@ namespace cuda
       }
       else DeviceNum = 1;
 
-      Sort.resize( DeviceNum );
-      Root.resize( DeviceNum );
-      Streams.resize( DeviceNum );
-      SyncEvents.resize( DeviceNum );
-      References.resize( DeviceNum );
-      Buffers.resize( DeviceNum );
-      CoordinatesDevicePtr.resize( DeviceNum );
+      Devices.resize( DeviceNum );
       for (int i = 0; i < DeviceNum; ++i) {
-         DeviceID.emplace_back( i );
-         Buffers[i].resize( Dim + 2, nullptr );
-         References[i].resize( Dim + 2, nullptr );
+         Devices[i].ID = gpu_id[i];
+         Devices[i].Buffer.resize( Dim + 2, nullptr );
+         Devices[i].Reference.resize( Dim + 2, nullptr );
 
-         setDevice( i );
-         CHECK_CUDA( cudaStreamCreate( &Streams[i] ) );
-         CHECK_CUDA( cudaEventCreate( &SyncEvents[i] ) );
+         setDevice( gpu_id[i] );
+         CHECK_CUDA( cudaStreamCreate( &Devices[i].Stream ) );
+         CHECK_CUDA( cudaEventCreate( &Devices[i].SyncEvent ) );
       }
    }
 
@@ -120,24 +114,24 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::initialize(const node_type* coordinates, int size, int device_id)
+   void KdtreeCUDA::initialize(Device& device, const node_type* coordinates, int size)
    {
-      if (CoordinatesDevicePtr[device_id] != nullptr) {
+      if (device.CoordinatesDevicePtr != nullptr) {
          throw std::runtime_error( "coordinates device ptr already allocated!" );
       }
-      if (Root[device_id] != nullptr) throw std::runtime_error( "k-d tree already allocated!" );
+      if (device.Root != nullptr) throw std::runtime_error( "k-d tree already allocated!" );
 
-      setDevice( device_id );
+      setDevice( device.ID );
       CHECK_CUDA(
          cudaMalloc(
-            reinterpret_cast<void**>(&CoordinatesDevicePtr[device_id]),
+            reinterpret_cast<void**>(&device.CoordinatesDevicePtr),
             sizeof( node_type ) * Dim * (size + 1)
          )
       );
       CHECK_CUDA(
          cudaMemcpyAsync(
-            CoordinatesDevicePtr[device_id], coordinates, sizeof( node_type ) * Dim * size,
-            cudaMemcpyHostToDevice, Streams[device_id]
+            device.CoordinatesDevicePtr, coordinates, sizeof( node_type ) * Dim * size,
+            cudaMemcpyHostToDevice, device.Stream
          )
       );
 
@@ -145,14 +139,14 @@ namespace cuda
       for (int i = 0; i < Dim; ++i) max_value[i] = std::numeric_limits<node_type>::max();
       CHECK_CUDA(
          cudaMemcpyAsync(
-            CoordinatesDevicePtr[device_id] + size * Dim, max_value, sizeof( node_type ) * Dim,
-            cudaMemcpyHostToDevice, Streams[device_id]
+            device.CoordinatesDevicePtr + size * Dim, max_value, sizeof( node_type ) * Dim,
+            cudaMemcpyHostToDevice, device.Stream
          )
       );
 
-      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Root[device_id]), sizeof( KdtreeNode ) * size ) );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Root), sizeof( KdtreeNode ) * size ) );
 
-      cuInitialize<<<ThreadBlockNum, ThreadNum, 0, Streams[device_id]>>>( Root[device_id], size );
+      cuInitialize<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>( device.Root, size );
    }
 
    __global__
@@ -165,16 +159,16 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::initializeReference(int size, int axis, int device_id)
+   void KdtreeCUDA::initializeReference(Device& device, int size, int axis)
    {
-      setDevice( device_id );
-      std::vector<int*>& references = References[device_id];
+      setDevice( device.ID );
+      std::vector<int*>& references = device.Reference;
       for (int i = 0; i <= Dim + 1; ++i) {
          if (references[i] == nullptr) {
             CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&references[i]), sizeof( int ) * size ) );
          }
       }
-      cuInitializeReference<<<ThreadBlockNum, ThreadNum, 0, Streams[device_id]>>>( references[axis], size );
+      cuInitializeReference<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>( references[axis], size );
       CHECK_KERNEL;
    }
 
@@ -215,7 +209,7 @@ namespace cuda
    }
 
    __device__
-   int searchInclusively(
+   int search(
       int index,
       node_type value,
       const int* reference,
@@ -224,7 +218,8 @@ namespace cuda
       int length,
       int step,
       int axis,
-      int dim
+      int dim,
+      bool inclusive
    )
    {
       if (length == 0) return 0;
@@ -235,34 +230,7 @@ namespace cuda
          const node_type t = compareSuperKey(
             buffer[j - 1], value, coordinates + reference[j - 1] * dim, coordinates + index * dim, axis, dim
          );
-         if (t <= 0) i = j;
-         step >>= 1;
-      }
-      return i;
-   }
-
-   __device__
-   int searchExclusively(
-      int index,
-      node_type value,
-      const int* reference,
-      const node_type* buffer,
-      const node_type* coordinates,
-      int length,
-      int step,
-      int axis,
-      int dim
-   )
-   {
-      if (length == 0) return 0;
-
-      int i = 0;
-      while (step > 0) {
-         const int j = min( i + step, length );
-         const node_type t = compareSuperKey(
-            buffer[j - 1], value, coordinates + reference[j - 1] * dim, coordinates + index * dim, axis, dim
-         );
-         if (t < 0) i = j;
+         if (t < 0 || (inclusive && t == 0)) i = j;
          step >>= 1;
       }
       return i;
@@ -301,11 +269,11 @@ namespace cuda
          const int reference_x = base_reference[i];
          const node_type buffer_y = base_buffer[i + step];
          const int reference_y = base_reference[i + step];
-         const int x = searchExclusively(
-            reference_x, buffer_x, base_reference + step, base_buffer + step, coordinates, step, step, axis, dim
+         const int x = search(
+            reference_x, buffer_x, base_reference + step, base_buffer + step, coordinates, step, step, axis, dim, false
          ) + i;
-         const int y = searchExclusively(
-            reference_y, buffer_y, base_reference, base_buffer, coordinates, step, step, axis, dim
+         const int y = search(
+            reference_y, buffer_y, base_reference, base_buffer, coordinates, step, step, axis, dim, false
          ) + i;
 
          __syncthreads();
@@ -352,18 +320,18 @@ namespace cuda
       const int sample_b = getSampleNum( element_b );
       if (i < sample_a) {
          ranks_a[i] = i * SampleStride;
-         ranks_b[i] = searchExclusively(
+         ranks_b[i] = search(
             reference[i * SampleStride], buffer[i * SampleStride],
             reference + step, buffer + step, coordinates,
-            element_b, getNextPowerOfTwo( element_b ), axis, dim
+            element_b, getNextPowerOfTwo( element_b ), axis, dim, false
          );
       }
       if (i < sample_b) {
          ranks_b[step / SampleStride + i] = i * SampleStride;
-         ranks_a[step / SampleStride + i] = searchInclusively(
+         ranks_a[step / SampleStride + i] = search(
             reference[i * SampleStride + step], buffer[i * SampleStride + step],
             reference, buffer, coordinates,
-            element_a, getNextPowerOfTwo( element_a ), axis, dim
+            element_a, getNextPowerOfTwo( element_a ), axis, dim, true
          );
       }
    }
@@ -427,13 +395,13 @@ namespace cuda
          value_a = buffer_a[threadIdx.x];
          index_a = reference_a[threadIdx.x];
          x = static_cast<int>(threadIdx.x) +
-            searchExclusively( index_a, value_a, reference_b, buffer_b, coordinates, length_b, SampleStride, axis, dim );
+            search( index_a, value_a, reference_b, buffer_b, coordinates, length_b, SampleStride, axis, dim, false );
       }
       if (threadIdx.x < length_b) {
          value_b = buffer_b[threadIdx.x];
          index_b = reference_b[threadIdx.x];
          y = static_cast<int>(threadIdx.x) +
-            searchInclusively( index_b, value_b, reference_a, buffer_a, coordinates, length_a, SampleStride, axis, dim );
+            search( index_b, value_b, reference_a, buffer_a, coordinates, length_a, SampleStride, axis, dim, true );
       }
 
       __syncthreads();
@@ -517,35 +485,33 @@ namespace cuda
    }
 
    void KdtreeCUDA::sortPartially(
+      Device& device,
       int source_index,
       int target_index,
       int start_offset,
       int size,
-      int axis,
-      int device_id
+      int axis
    )
    {
-      assert( CoordinatesDevicePtr[device_id] != nullptr );
-      assert( References[device_id][source_index] != nullptr && References[device_id][target_index] != nullptr );
+      assert( device.CoordinatesDevicePtr != nullptr );
+      assert( device.Reference[source_index] != nullptr && device.Reference[target_index] != nullptr );
 
-      setDevice( device_id );
-      if (Buffers[device_id][source_index] == nullptr) {
+      setDevice( device.ID );
+      if (device.Buffer[source_index] == nullptr) {
          CHECK_CUDA(
-            cudaMalloc( reinterpret_cast<void**>(&Buffers[device_id][source_index]), sizeof( node_type ) * size )
+            cudaMalloc( reinterpret_cast<void**>(&device.Buffer[source_index]), sizeof( node_type ) * size )
          );
-         cuCopyCoordinates<<<ThreadBlockNum, ThreadNum, 0, Streams[device_id]>>>(
-            Buffers[device_id][source_index],
-            CoordinatesDevicePtr[device_id] + start_offset * Dim,
-            References[device_id][source_index],
-            size,
-            axis,
-            Dim
+         cuCopyCoordinates<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>(
+            device.Buffer[source_index],
+            device.CoordinatesDevicePtr + start_offset * Dim,
+            device.Reference[source_index],
+            size, axis, Dim
          );
          CHECK_KERNEL;
       }
-      if (Buffers[device_id][target_index] == nullptr) {
+      if (device.Buffer[target_index] == nullptr) {
          CHECK_CUDA(
-            cudaMalloc( reinterpret_cast<void**>(&Buffers[device_id][target_index]), sizeof( node_type ) * size )
+            cudaMalloc( reinterpret_cast<void**>(&device.Buffer[target_index]), sizeof( node_type ) * size )
          );
       }
 
@@ -557,55 +523,55 @@ namespace cuda
       node_type* in_buffer = nullptr;
       node_type* out_buffer = nullptr;
       if (stage_num & 1) {
-         in_buffer = Sort[device_id].Buffer;
-         in_reference = Sort[device_id].Reference;
-         out_buffer = Buffers[device_id][target_index];
-         out_reference = References[device_id][target_index] + start_offset;
+         in_buffer = device.Sort.Buffer;
+         in_reference = device.Sort.Reference;
+         out_buffer = device.Buffer[target_index];
+         out_reference = device.Reference[target_index] + start_offset;
       }
       else {
-         in_buffer = Buffers[device_id][target_index];
-         in_reference = References[device_id][target_index] + start_offset;
-         out_buffer = Sort[device_id].Buffer;
-         out_reference = Sort[device_id].Reference;
+         in_buffer = device.Buffer[target_index];
+         in_reference = device.Reference[target_index] + start_offset;
+         out_buffer = device.Sort.Buffer;
+         out_reference = device.Sort.Reference;
       }
 
-      assert( size <= SampleStride * Sort[device_id].MaxSampleNum );
+      assert( size <= SampleStride * device.Sort.MaxSampleNum );
       assert( size % SharedSizeLimit == 0 );
 
       const int block_num = size / SharedSizeLimit;
       int thread_num = SharedSizeLimit / 2;
-      cuSort<<<block_num, thread_num, 0, Streams[device_id]>>>(
+      cuSort<<<block_num, thread_num, 0, device.Stream>>>(
          in_reference, in_buffer,
-         References[device_id][source_index] + start_offset, Buffers[device_id][source_index],
-         CoordinatesDevicePtr[device_id], axis, Dim
+         device.Reference[source_index] + start_offset, device.Buffer[source_index],
+         device.CoordinatesDevicePtr, axis, Dim
       );
       CHECK_KERNEL;
 
       for (int step = SharedSizeLimit; step < size; step <<= 1) {
          const int last = size % (2 * step);
          thread_num = last > step ? (size + 2 * step - last) / (2 * SampleStride) : (size - last) / (2 * SampleStride);
-         cuGenerateSampleRanks<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
-            Sort[device_id].RanksA, Sort[device_id].RanksB,
-            in_reference, in_buffer, CoordinatesDevicePtr[device_id],
+         cuGenerateSampleRanks<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
+            device.Sort.RanksA, device.Sort.RanksB,
+            in_reference, in_buffer, device.CoordinatesDevicePtr,
             step, size, axis, Dim, thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
-            Sort[device_id].LimitsA, Sort[device_id].RanksA, step, size, thread_num
+         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
+            device.Sort.LimitsA, device.Sort.RanksA, step, size, thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, Streams[device_id]>>>(
-            Sort[device_id].LimitsB, Sort[device_id].RanksB, step, size, thread_num
+         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
+            device.Sort.LimitsB, device.Sort.RanksB, step, size, thread_num
          );
          CHECK_KERNEL;
 
          const int merge_pairs = last > step ? getSampleNum( size ) : (size - last) / SampleStride;
-         cuMergeReferences<<<merge_pairs, SampleStride, 0, Streams[device_id]>>>(
+         cuMergeReferences<<<merge_pairs, SampleStride, 0, device.Stream>>>(
             out_reference, out_buffer,
-            in_reference, in_buffer, CoordinatesDevicePtr[device_id],
-            Sort[device_id].LimitsA, Sort[device_id].LimitsB,
+            in_reference, in_buffer, device.CoordinatesDevicePtr,
+            device.Sort.LimitsA, device.Sort.LimitsB,
             step, size, axis, Dim
          );
          CHECK_KERNEL;
@@ -614,13 +580,13 @@ namespace cuda
             CHECK_CUDA(
                cudaMemcpyAsync(
                   out_reference + size - last, in_reference + size - last, sizeof( int ) * last,
-                  cudaMemcpyDeviceToDevice, Streams[device_id]
+                  cudaMemcpyDeviceToDevice, device.Stream
                )
             );
             CHECK_CUDA(
                cudaMemcpyAsync(
                   out_buffer + size - last, in_buffer + size - last, sizeof( node_type ) * last,
-                  cudaMemcpyDeviceToDevice, Streams[device_id]
+                  cudaMemcpyDeviceToDevice, device.Stream
                )
             );
          }
@@ -733,60 +699,248 @@ namespace cuda
 
    int KdtreeCUDA::swapBalanced(int source_index, int start_offset, int size, int axis)
    {
-      setDevice( 0 );
-      cuSelectPivot<<<1, 1, 0, Streams[0]>>>(
-         References[0][source_index] + start_offset, Buffers[0][source_index], CoordinatesDevicePtr[0],
-         References[1][source_index] + start_offset, Buffers[1][source_index], CoordinatesDevicePtr[1],
+      auto& d0 = Devices[0];
+      auto& d1 = Devices[1];
+
+      setDevice( d0.ID );
+      cuSelectPivot<<<1, 1, 0, Devices[0].Stream>>>(
+         d0.Reference[source_index] + start_offset, d0.Buffer[source_index], d0.CoordinatesDevicePtr,
+         d1.Reference[source_index] + start_offset, d1.Buffer[source_index], d1.CoordinatesDevicePtr,
          size, axis, Dim
       );
       CHECK_KERNEL;
 
       int pivot;
       CHECK_CUDA(
-         cudaMemcpyFromSymbolAsync( &pivot, selected_pivot, sizeof( pivot ), 0, cudaMemcpyDeviceToHost, Streams[0] )
+         cudaMemcpyFromSymbolAsync( &pivot, selected_pivot, sizeof( pivot ), 0, cudaMemcpyDeviceToHost, d0.Stream )
       );
 
-      cuSwapPivot<<<ThreadBlockNum * ThreadNum, 1024, 0, Streams[0]>>>(
-         CoordinatesDevicePtr[0], Buffers[0][source_index],
-         CoordinatesDevicePtr[1], Buffers[1][source_index],
-         References[0][source_index] + start_offset, References[1][source_index] + start_offset,
+      cuSwapPivot<<<ThreadBlockNum * ThreadNum, 1024, 0, d0.Stream>>>(
+         d0.CoordinatesDevicePtr, d0.Buffer[source_index],
+         d1.CoordinatesDevicePtr, d1.Buffer[source_index],
+         d0.Reference[source_index] + start_offset, d1.Reference[source_index] + start_offset,
          size, axis, Dim
       );
       CHECK_KERNEL;
       return pivot;
    }
 
+   __device__
+   int mergePath(
+      const int* reference_a,
+      const node_type* buffer_a,
+      int count_a,
+      const int* reference_b,
+      const node_type* buffer_b,
+      int count_b,
+      const node_type* coordinates,
+      int diagonal,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+      int begin = max( 0, diagonal - count_b );
+      int end = min( diagonal, count_a );
+      while (begin < end) {
+         const int mid = begin + (end - begin) / 2;
+         const int index_a = reference_a[mid];
+         const int index_b = reference_b[diagonal - 1 - mid];
+         const node_type a = buffer_a[mid];
+         const node_type b = buffer_b[diagonal - 1 - mid];
+         const node_type t =
+            compareSuperKey( a, b, coordinates + index_a * dim, coordinates + index_b * dim, axis, dim );
+         if (t < 0) begin = mid + 1;
+         else end = mid;
+      }
+      return begin;
+   }
+
+   __global__
+   void cuMergePaths(
+      int* merge_path,
+      const int* reference_a,
+      const node_type* buffer_a,
+      int count_a,
+      const int* reference_b,
+      const node_type* buffer_b,
+      int count_b,
+      const node_type* coordinates,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const int partitions = divideUp( count_a + count_b, MergePathBlockSize );
+      if (index == 0) {
+         merge_path[0] = 0;
+         merge_path[partitions] = count_a;
+      }
+      for (int i = index + 1; i < partitions; i += step) {
+         merge_path[i] = mergePath(
+            reference_a, buffer_a, count_a,
+            reference_b, buffer_b, count_b,
+            coordinates,
+            i * MergePathBlockSize, size, axis, dim
+         );
+      }
+   }
+
+   __global__
+   void cuMergePartitions(
+      int* target_reference,
+      node_type* target_buffer,
+      const int* reference_a,
+      const node_type* buffer_a,
+      int count_a,
+      const int* reference_b,
+      const node_type* buffer_b,
+      int count_b,
+      const node_type* coordinates,
+      const int* merge_path,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+      __shared__ int in_reference[MergePathBlockSize];
+      __shared__ int out_reference[MergePathBlockSize];
+      __shared__ node_type in_buffer[MergePathBlockSize];
+      __shared__ node_type out_buffer[MergePathBlockSize];
+
+      int index;
+      node_type value;
+      const auto x = static_cast<int>(threadIdx.x);
+      const int partitions = divideUp( size, MergePathBlockSize );
+      for (int i = static_cast<int>(blockIdx.x); i < partitions; i += static_cast<int>(gridDim.x)) {
+         const int grid = i * MergePathBlockSize;
+         const int a0 = merge_path[i];
+         const int a1 = merge_path[i + 1];
+         const int b0 = grid - a0;
+         const int b1 = min( count_a + count_b, grid + MergePathBlockSize ) - a1;
+         const int j = x + grid;
+         if (a0 == a1) {
+            const int k = b0 + x;
+            value = buffer_b[k];
+            index = reference_b[k];
+            target_buffer[j] = value;
+            target_reference[j] = index;
+         }
+         else if (b0 == b1) {
+            const int k = a0 + x;
+            value = buffer_a[k];
+            index = reference_a[k];
+            target_buffer[j] = value;
+            target_reference[j] = index;
+         }
+         else {
+            const bool inclusive = x < a1 - a0;
+            if (inclusive) {
+               const int k = a0 + x;
+               value = buffer_a[k];
+               index = reference_a[k];
+            }
+            else {
+               const int k = b0 + x - (a1 - a0);
+               value = buffer_b[k];
+               index = reference_b[k];
+            }
+            in_buffer[x] = value;
+            in_reference[x] = index;
+            __syncthreads();
+
+            const int n = inclusive ? b1 - b0 : a1 - a0;
+            const int offset = inclusive ? a1 - a0 : 0;
+            const int t = search(
+               index, value, in_reference + offset, in_buffer + offset,
+               coordinates, n, getNextPowerOfTwo( n ), axis, dim, inclusive
+            );
+            const int k = inclusive ? t + x : t + x - (a1 - a0);
+            out_buffer[k] = value;
+            out_reference[k] = index;
+            __syncthreads();
+
+            target_buffer[j] = out_buffer[x];
+            target_reference[j] = out_reference[x];
+         }
+      }
+   }
+
+   void KdtreeCUDA::mergeSwap(
+      Device& device,
+      int source_index,
+      int target_index,
+      int merge_point,
+      int size
+   )
+   {
+      setDevice( device.ID );
+
+      const int count_a = merge_point;
+      const int count_b = size - merge_point;
+      const int partitions = divideUp( size, MergePathBlockSize );
+      const int thread_num = divideUp( ThreadBlockNum * ThreadNum, MergePathBlockSize );
+      CHECK_CUDA(
+         cudaMalloc( reinterpret_cast<void**>(&device.Sort.MergePath), sizeof( int ) * (partitions + 1) )
+      );
+      cuMergePaths<<<thread_num, MergePathBlockSize, 0, device.Stream>>>(
+         device.Sort.MergePath,
+         device.Reference[source_index], device.Buffer[source_index], count_a,
+         device.Reference[source_index] + count_a, device.Buffer[source_index] + count_a, count_b,
+         device.CoordinatesDevicePtr, size, 0, Dim
+      );
+      CHECK_KERNEL;
+
+      cuMergePartitions<<<thread_num, MergePathBlockSize, 0, device.Stream>>>(
+         device.Reference[target_index], device.Buffer[target_index],
+         device.Reference[source_index], device.Buffer[source_index], count_a,
+         device.Reference[source_index] + count_a, device.Buffer[source_index] + count_a, count_b,
+         device.CoordinatesDevicePtr, device.Sort.MergePath, size, 0, Dim
+      );
+      CHECK_KERNEL;
+   }
+
    void KdtreeCUDA::sort(int* end, int size)
    {
       const int max_sample_num = size / SampleStride + 1;
-      for (int i = 0; i < DeviceNum; ++i) {
-         setDevice( i );
-         Sort[i].MaxSampleNum = max_sample_num;
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].RanksA), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].RanksB), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].LimitsA), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].LimitsB), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].Reference), sizeof( int ) * size ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Sort[i].Buffer), sizeof( node_type ) * size ) );
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         device.Sort.MaxSampleNum = max_sample_num;
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RanksA), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RanksB), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsA), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsB), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Reference), sizeof( int ) * size ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Buffer), sizeof( node_type ) * size ) );
       }
 
       const int size_per_device = size / DeviceNum;
       if (DeviceNum > 1) {
-         for (int i = 0; i < DeviceNum; ++i) {
-            initializeReference( size_per_device, 0, i );
-            sortPartially( 0, Dim, 0, size_per_device, 0, i );
+         for (auto& device : Devices) {
+            initializeReference( device, size_per_device, 0 );
+            sortPartially( device, 0, Dim, 0, size_per_device, 0 );
          }
          sync();
 
          const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
          std::cout << " >> Pivot = " << pivot << "\n";
          sync();
+
+         mergeSwap( Devices[0], Dim, 0, size_per_device - pivot, size_per_device );
+         mergeSwap( Devices[1], Dim, 0, pivot, size_per_device );
+         sync();
+
+         for (int i = 0; i < DeviceNum; ++i) {
+
+         }
       }
       else {
-         setDevice( 0 );
+         setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
-            initializeReference( size_per_device, axis, 0 );
-            sortPartially( axis, Dim, 0, size_per_device, axis, 0 );
+            initializeReference( Devices[0], size_per_device, axis );
+            sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
          }
       }
       sync();
@@ -797,7 +951,7 @@ namespace cuda
       const int size_per_device = size / DeviceNum;
       for (int i = 0; i < DeviceNum; ++i) {
          const node_type* ptr = coordinates + i * Dim * size_per_device;
-         initialize( ptr, size_per_device, i );
+         initialize( Devices[i], ptr, size_per_device );
       }
       cudaDeviceSynchronize();
 
