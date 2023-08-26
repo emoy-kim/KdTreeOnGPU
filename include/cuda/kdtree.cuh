@@ -81,6 +81,7 @@ namespace cuda
       {
          int ID;
          int TupleNum;
+         int RootNode;
          SortGPU Sort;
          KdtreeNode* Root;
          cudaStream_t Stream;
@@ -88,10 +89,14 @@ namespace cuda
          std::vector<int*> Reference;
          std::vector<node_type*> Buffer;
          node_type* CoordinatesDevicePtr;
+         int* LeftSegmentLengths;
+         int* RightSegmentLengths;
+         std::array<int*, 2> MidReferences;
 
          Device() :
-            ID( -1 ), TupleNum( 0 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
-            CoordinatesDevicePtr( nullptr ) {}
+            ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
+            CoordinatesDevicePtr( nullptr ), LeftSegmentLengths( nullptr ), RightSegmentLengths( nullptr ),
+            MidReferences{} {}
       };
 
       const int Dim;
@@ -131,5 +136,7 @@ namespace cuda
       static void copyReferenceAndBuffer(Device& device, int source_index, int target_index, int size);
       static void copyReference(Device& device, int source_index, int target_index, int size);
       void sort(std::vector<int>& end, int size);
+      void partitionDimension(Device& device, int axis, int depth) const;
+      [[nodiscard]] int build();
    };
 }

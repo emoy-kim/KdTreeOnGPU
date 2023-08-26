@@ -1353,6 +1353,103 @@ namespace cuda
       }
    }
 
+    __global__
+   void cuPartition(
+      KdtreeNode* root,
+      int* target_left_reference,
+      int* target_right_reference,
+      const int* source_reference,
+      const int* primary_reference,
+      const int* segment_left_lengths,
+      const int* segment_right_lengths,
+      const int* mid_reference,
+      const int* last_mid_reference,
+      const node_type* __restrict__ coordinates,
+      int start,
+      int end,
+      int axis,
+      int dim,
+      int depth
+   )
+   {
+   }
+
+   void KdtreeCUDA::partitionDimension(Device& device, int axis, int depth) const
+   {
+      constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
+      constexpr int warp_num = total_thread_num / warpSize;
+      const auto log_warp_num = static_cast<int>(std::log2( static_cast<double>(warp_num) ));
+      const auto log_size = static_cast<int>(std::ceil( std::log2( static_cast<double>(device.TupleNum) ) ));
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+
+      setDevice( device.ID );
+      int* mid_reference = device.MidReferences[depth % 2];
+      int* last_mid_reference = depth == 0 ? nullptr : device.MidReferences[(depth - 1) % 2];
+      if (depth < log_warp_num) {
+         int loop_levels = 0;
+         for (int i = 1; i < Dim; ++i) {
+            int r = i + axis;
+            r = r < Dim ? r : r - Dim;
+            cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+               device.Root, device.Reference[Dim], device.Reference[Dim + 1],
+               device.Reference[r], device.Reference[axis],
+               device.LeftSegmentLengths, device.RightSegmentLengths,
+               mid_reference, last_mid_reference, device.CoordinatesDevicePtr,
+               0, device.TupleNum - 1, axis, Dim, depth
+            );
+            CHECK_KERNEL;
+         }
+      }
+   }
+
+   int KdtreeCUDA::build()
+   {
+      constexpr int warp_num = ThreadBlockNum * ThreadNum / warpSize;
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.LeftSegmentLengths), sizeof( int ) * warp_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.RightSegmentLengths), sizeof( int ) * warp_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[0]), sizeof( int ) * device.TupleNum ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[1]), sizeof( int ) * device.TupleNum ) );
+      }
+
+      const int start = DeviceNum == 1 ? 0 : 1;
+      for (auto& device : Devices) {
+         assert( !device.Reference.empty() );
+         for (int axis = 0; axis < Dim; ++axis) assert( device.Reference[axis] != nullptr );
+
+         setDevice( device.ID );
+         if (device.Reference[Dim] == nullptr) {
+            CHECK_CUDA(
+               cudaMalloc( reinterpret_cast<void**>(&device.Reference[Dim]), sizeof( int ) * device.TupleNum )
+            );
+         }
+
+         const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(device.TupleNum) ) ));
+         for (int i = 0; i < depth - 1; ++i) {
+            const int axis = (i + start) % Dim;
+            partitionDimension( device, axis, i );
+         }
+
+      }
+
+      if (DeviceNum == 1) RootNode = Devices[0].RootNode;
+      else {
+
+      }
+
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
+         CHECK_CUDA( cudaFree( device.LeftSegmentLengths ) );
+         CHECK_CUDA( cudaFree( device.RightSegmentLengths ) );
+         CHECK_CUDA( cudaFree( device.MidReferences[0] ) );
+         CHECK_CUDA( cudaFree( device.MidReferences[1] ) );
+      }
+      return RootNode;
+   }
+
    void KdtreeCUDA::create(const node_type* coordinates, int size)
    {
       const int size_per_device = size / DeviceNum;
@@ -1364,5 +1461,12 @@ namespace cuda
 
       std::vector<int> end(Dim);
       sort( end, size );
+
+      for (int i = 0; i < Dim - 1; ++i) {
+         assert( end[i] >= 0 );
+         for (int j = i + 1; j < Dim; ++j) assert( end[i] == end[j] );
+      }
+
+      RootNode = build();
    }
 }
