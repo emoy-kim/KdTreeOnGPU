@@ -208,8 +208,8 @@ namespace cuda
 
    __device__
    int search(
-      int index,
-      node_type value,
+      int r,
+      node_type v,
       const int* reference,
       const node_type* buffer,
       const node_type* coordinates,
@@ -226,7 +226,7 @@ namespace cuda
       while (step > 0) {
          const int j = min( i + step, length );
          const node_type t = compareSuperKey(
-            buffer[j - 1], value, coordinates + reference[j - 1] * dim, coordinates + index * dim, axis, dim
+            buffer[j - 1], v, coordinates + reference[j - 1] * dim, coordinates + r * dim, axis, dim
          );
          if (t < 0 || (inclusive && t == 0)) i = j;
          step >>= 1;
@@ -428,9 +428,6 @@ namespace cuda
       int dim
    )
    {
-      __shared__ int reference[2 * SampleStride];
-      __shared__ node_type buffer[2 * SampleStride];
-
       const int index = static_cast<int>(blockIdx.x) & (2 * step / SampleStride - 1);
       const int segment_base = (static_cast<int>(blockIdx.x) - index) * SampleStride;
       target_buffer += segment_base;
@@ -438,6 +435,8 @@ namespace cuda
       source_buffer += segment_base;
       source_reference += segment_base;
 
+      __shared__ int reference[2 * SampleStride];
+      __shared__ node_type buffer[2 * SampleStride];
       __shared__ int start_source_a, start_source_b;
       __shared__ int start_target_a, start_target_b;
       __shared__ int length_a, length_b;
@@ -808,8 +807,8 @@ namespace cuda
       __shared__ node_type in_buffer[MergePathBlockSize];
       __shared__ node_type out_buffer[MergePathBlockSize];
 
-      int index;
-      node_type value;
+      int r;
+      node_type v;
       const auto x = static_cast<int>(threadIdx.x);
       const int partitions = divideUp( size, MergePathBlockSize );
       for (int i = static_cast<int>(blockIdx.x); i < partitions; i += static_cast<int>(gridDim.x)) {
@@ -821,43 +820,43 @@ namespace cuda
          const int j = x + grid;
          if (a0 == a1) {
             const int k = b0 + x;
-            value = buffer_b[k];
-            index = reference_b[k];
-            target_buffer[j] = value;
-            target_reference[j] = index;
+            v = buffer_b[k];
+            r = reference_b[k];
+            target_buffer[j] = v;
+            target_reference[j] = r;
          }
          else if (b0 == b1) {
             const int k = a0 + x;
-            value = buffer_a[k];
-            index = reference_a[k];
-            target_buffer[j] = value;
-            target_reference[j] = index;
+            v = buffer_a[k];
+            r = reference_a[k];
+            target_buffer[j] = v;
+            target_reference[j] = r;
          }
          else {
             const bool inclusive = x < a1 - a0;
             if (inclusive) {
                const int k = a0 + x;
-               value = buffer_a[k];
-               index = reference_a[k];
+               v = buffer_a[k];
+               r = reference_a[k];
             }
             else {
                const int k = b0 + x - (a1 - a0);
-               value = buffer_b[k];
-               index = reference_b[k];
+               v = buffer_b[k];
+               r = reference_b[k];
             }
-            in_buffer[x] = value;
-            in_reference[x] = index;
+            in_buffer[x] = v;
+            in_reference[x] = r;
             __syncthreads();
 
             const int n = inclusive ? b1 - b0 : a1 - a0;
             const int offset = inclusive ? a1 - a0 : 0;
             const int t = search(
-               index, value, in_reference + offset, in_buffer + offset,
+               r, v, in_reference + offset, in_buffer + offset,
                coordinates, n, getNextPowerOfTwo( n ), axis, dim, inclusive
             );
             const int k = inclusive ? t + x : t + x - (a1 - a0);
-            out_buffer[k] = value;
-            out_reference[k] = index;
+            out_buffer[k] = v;
+            out_reference[k] = r;
             __syncthreads();
 
             target_buffer[j] = out_buffer[x];
@@ -920,7 +919,175 @@ namespace cuda
       int dim
    )
    {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int warp_index = (index - thread_index) / warpSize;
+      const int start_segment = warp_index * segment_size;
+      if (start_segment + segment_size > size) segment_size = size - start_segment;
 
+      __shared__ int reference[SharedSizeLimit];
+      __shared__ node_type buffer[SharedSizeLimit];
+
+      int* out_reference = target_reference + start_segment;
+      node_type* out_buffer = target_buffer + start_segment;
+      const int* in_reference = source_reference + start_segment;
+      const node_type* in_buffer = source_buffer + start_segment;
+      const int shared_base = 2 * warpSize * (warp_index % warps_per_block);
+      const int shared_address_mask = 2 * warpSize - 1;
+      const int mask = (1 << thread_index) - 1;
+
+      node_type t, v;
+      int i, r, count = 0;
+      int shuffle_mask = 0;
+      for (i = 0; i < segment_size && shuffle_mask == 0; i += warpSize) {
+         if (thread_index < segment_size) {
+            buffer[shared_base + thread_index] = v = in_buffer[thread_index];
+            reference[shared_base + thread_index] = r = in_reference[thread_index];
+            if (thread_index != 0) {
+               t = compareSuperKey(
+                  v, buffer[shared_base + thread_index - 1],
+                  coordinates + r * dim, coordinates + reference[shared_base + thread_index - 1] * dim,
+                  axis, dim
+               );
+            }
+            else if (warp_index != 0) {
+               t = compareSuperKey(
+                  v, *(in_buffer - 1),
+                  coordinates + r * dim, coordinates + *(in_reference - 1) * dim,
+                  axis, dim
+               );
+            }
+            else if (other_coordinates != nullptr) {
+               t = compareSuperKey(
+                  v, *(other_coordinates + (*other_reference) * dim),
+                  coordinates + r * dim, other_coordinates + (*other_reference) * dim,
+                  axis, dim
+               );
+            }
+            else t = 1;
+         }
+         else t = 0;
+
+         if (t < 0) {
+            removal_error = -1;
+            atomicMin( &removal_error_address, start_segment + thread_index );
+         }
+         in_buffer += warpSize;
+         in_reference += warpSize;
+
+         shuffle_mask = static_cast<int>(__ballot( t > 0 ));
+         if (t > 0) {
+            const int j = __popc( shuffle_mask & mask );
+            buffer[shared_base + ((count + j) & shared_address_mask)] = v;
+            reference[shared_base + ((count + j) & shared_address_mask)] = r;
+         }
+      }
+
+      int old_count = count;
+      count += __popc( shuffle_mask );
+      if (((old_count ^ count) & warpSize) != 0) {
+         out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
+            buffer[shared_base + (old_count & warpSize) + thread_index];
+         out_reference[(old_count & ~(warpSize - 1)) + thread_index] =
+            reference[shared_base + (old_count & warpSize) + thread_index];
+      }
+
+      for (; i < segment_size; i += warpSize) {
+         if (i + thread_index < segment_size) {
+            buffer[shared_base + ((count + thread_index) & shared_address_mask)] = v = in_buffer[thread_index];
+            reference[shared_base + ((count + thread_index) & shared_address_mask)] = r = in_reference[thread_index];
+            t = compareSuperKey(
+               v, buffer[shared_base + ((count + thread_index - 1) & shared_address_mask)],
+               coordinates + r * dim,
+               coordinates + reference[shared_base + ((count + thread_index - 1) & shared_address_mask)] * dim,
+               axis, dim
+            );
+         }
+         else t = 0;
+
+         if (t < 0) {
+            removal_error = -1;
+            atomicMin( &removal_error_address, start_segment + thread_index );
+         }
+         in_buffer += warpSize;
+         in_reference += warpSize;
+
+         shuffle_mask = static_cast<int>(__ballot( t > 0 ));
+         if (t > 0) {
+            const int j = __popc( shuffle_mask & mask );
+            buffer[shared_base + ((count + j) & shared_address_mask)] = v;
+            reference[shared_base + ((count + j) & shared_address_mask)] = r;
+         }
+
+         old_count = count;
+         count += __popc( shuffle_mask );
+         if (((old_count ^ count) & warpSize) != 0) {
+            out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
+               buffer[shared_base + (old_count & warpSize) + thread_index];
+            out_reference[(old_count & ~(warpSize - 1)) + thread_index] =
+               reference[shared_base + (old_count & warpSize) + thread_index];
+         }
+      }
+
+      if ((count & (warpSize - 1)) > thread_index) {
+         out_buffer[(count & ~(warpSize - 1)) + thread_index] =
+            buffer[shared_base + (count & warpSize) + thread_index];
+         out_reference[(count & ~(warpSize - 1)) + thread_index] =
+            reference[shared_base + (count & warpSize) + thread_index];
+      }
+
+      if (thread_index == 0 && segment_lengths != nullptr) segment_lengths[warp_index] = count;
+   }
+
+   __device__
+   void copyWarp(
+      int* target_reference,
+      node_type* target_buffer,
+      const int* source_reference,
+      const node_type* source_buffer,
+      int segment_size
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      for (int i = thread_index; i < segment_size; i += warpSize) {
+         target_buffer[i] = source_buffer[i];
+         target_reference[i] = source_reference[i];
+      }
+   }
+
+   __global__
+   void cuRemoveGaps(
+      int* target_reference,
+      node_type* target_buffer,
+      const int* source_reference,
+      const node_type* source_buffer,
+      const int* segment_lengths,
+      int segment_size,
+      int size
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      const int warp_index = (index - thread_index) / warpSize;
+      const int in_start = warp_index * segment_size;
+      int out_start = 0, length = 0;
+      if (thread_index == 0) {
+         for (int i = 0; i < warp_index; ++i) out_start += segment_lengths[i];
+         length = segment_lengths[warp_index];
+      }
+
+      out_start = __shfl( out_start, 0 );
+      length = __shfl( length, 0 );
+      copyWarp(
+         target_reference + out_start, target_buffer + out_start,
+         source_reference + in_start, source_buffer + in_start, segment_size
+      );
+
+      if (thread_index == 0 && in_start + segment_size >= size) {
+         num_after_removal = out_start + segment_lengths[warp_index];
+      }
    }
 
    int KdtreeCUDA::removeDuplicates(
@@ -936,7 +1103,8 @@ namespace cuda
       assert( device.Buffer[source_index] != nullptr && device.Buffer[target_index] != nullptr );
       assert( device.Reference[source_index] != nullptr && device.Reference[target_index] != nullptr );
 
-      const int error = 0, error_address = 0x7FFFFFFF;
+      int error = 0;
+      const int error_address = 0x7FFFFFFF;
       CHECK_CUDA(
          cudaMemcpyToSymbolAsync(
             removal_error, &error, sizeof( removal_error ), 0,
@@ -952,7 +1120,7 @@ namespace cuda
 
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
       constexpr int segment = total_thread_num / 32;
       const int segment_size = (size - 1 + segment) / segment;
       const int* other_reference = other_device == nullptr ?
@@ -962,7 +1130,7 @@ namespace cuda
       int* segment_lengths;
       setDevice( device.ID );
       CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&segment_lengths), sizeof( int ) * segment ) );
-      cuRemoveDuplicates<<<block_num, thread_num>>>(
+      cuRemoveDuplicates<<<block_num, thread_num_per_block>>>(
          segment_lengths, device.Sort.Reference, device.Sort.Buffer,
          device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, other_reference, other_coordinates,
@@ -970,14 +1138,27 @@ namespace cuda
       );
       CHECK_KERNEL;
 
+      cuRemoveGaps<<<block_num, thread_num_per_block>>>(
+         device.Reference[target_index], device.Buffer[target_index],
+         device.Sort.Reference, device.Sort.Buffer,
+         segment_lengths, segment_size, size
+      );
+      CHECK_KERNEL;
+
       CHECK_CUDA( cudaFree( segment_lengths ) );
+
+      CHECK_CUDA(
+         cudaMemcpyFromSymbolAsync( &error, removal_error, sizeof( error ), 0, cudaMemcpyDeviceToHost, device.Stream )
+      );
+      if (error != 0) {
+         std::ostringstream buffer;
+         buffer << "error in removeDuplicates(): " << error << "\n";
+         throw std::runtime_error( buffer.str() );
+      }
 
       int num;
       CHECK_CUDA(
-         cudaMemcpyFromSymbolAsync(
-            &num, num_after_removal, sizeof( num_after_removal ), 0,
-            cudaMemcpyDeviceToHost, device.Stream
-         )
+         cudaMemcpyFromSymbolAsync( &num, num_after_removal, sizeof( num ), 0, cudaMemcpyDeviceToHost, device.Stream )
       );
       return num;
    }
