@@ -30,7 +30,7 @@ namespace cuda
       return 1 << (bits - __clz( x - 1 ));
    }
 
-   KdtreeCUDA::KdtreeCUDA(const node_type* vertices, int size, int dim) : Dim( dim ), NodeNum( 0 )
+   KdtreeCUDA::KdtreeCUDA(const node_type* vertices, int size, int dim) : Dim( dim ), NodeNum( 0 ), RootNode( -1 )
    {
       if (DeviceNum == 0) prepareCUDA();
       create( vertices, size );
@@ -41,13 +41,13 @@ namespace cuda
       for (auto& device : Devices) {
          setDevice( device.ID );
          if (!device.Reference.empty()) {
-            for (int i = 0; i <= Dim; ++i) {
-               if (device.Reference[i] != nullptr) cudaFree( device.Reference[i] );
+            for (int axis = 0; axis <= Dim; ++axis) {
+               if (device.Reference[axis] != nullptr) cudaFree( device.Reference[axis] );
             }
          }
          if (!device.Buffer.empty()) {
-            for (int i = 0; i <= Dim; ++i) {
-               if (device.Buffer[i] != nullptr) cudaFree( device.Buffer[i] );
+            for (int axis = 0; axis <= Dim; ++axis) {
+               if (device.Buffer[axis] != nullptr) cudaFree( device.Buffer[axis] );
             }
          }
          if (device.CoordinatesDevicePtr != nullptr) cudaFree( device.CoordinatesDevicePtr );
@@ -1163,6 +1163,102 @@ namespace cuda
       return num;
    }
 
+   __global__
+   void cuFillMemory(int* ptr, int value, int size)
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      for (int i = index; i < size; i += step) ptr[i] = value;
+   }
+
+   void KdtreeCUDA::fillUp(Device& device, int size) const
+   {
+      if (device.TupleNum == size) return;
+
+      assert( device.Reference[Dim] + device.TupleNum == nullptr );
+
+      setDevice( device.ID );
+      cuFillMemory<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>(
+         device.Reference[Dim] + device.TupleNum, size, size - device.TupleNum
+      );
+      CHECK_KERNEL;
+   }
+
+   __global__
+   void cuCopyReferenceAndBuffer(
+      int* target_reference,
+      node_type* target_buffer,
+      const int* source_reference,
+      const node_type* source_buffer,
+      int segment_size,
+      int size
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      const int warp_index = (index - thread_index) / warpSize;
+      const int start_segment = warp_index * segment_size;
+      if (start_segment + segment_size > size) segment_size = size - start_segment;
+
+      copyWarp(
+         target_reference + start_segment, target_buffer + start_segment,
+         source_reference + start_segment, source_buffer + start_segment, segment_size
+      );
+   }
+
+   void KdtreeCUDA::copyReferenceAndBuffer(Device& device, int source_index, int target_index, int size)
+   {
+      assert( device.Reference[source_index] != nullptr && device.Buffer[source_index] != nullptr );
+
+      if (device.Reference[target_index] == nullptr) {
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Reference[target_index]), sizeof( int ) * size ) );
+      }
+      if (device.Buffer[target_index] == nullptr) {
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Buffer[target_index]), sizeof( node_type ) * size ) );
+      }
+
+      constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int segment = total_thread_num / 32;
+      const int segment_size = (size - 1 + segment) / segment;
+
+      setDevice( device.ID );
+      cuCopyReferenceAndBuffer<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+         device.Reference[target_index], device.Buffer[target_index],
+         device.Reference[source_index], device.Buffer[source_index],
+         segment_size, size
+      );
+      CHECK_KERNEL;
+   }
+
+   __global__
+   void cuCopyReference(int* target_reference, const int* source_reference, int size)
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      for (int i = index; i < size; i += step) target_reference[i] = source_reference[i];
+   }
+
+   void KdtreeCUDA::copyReference(Device& device, int source_index, int target_index, int size)
+   {
+      assert( device.Reference[source_index] != nullptr );
+
+      if (device.Reference[target_index] == nullptr) {
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Reference[target_index]), sizeof( int ) * size ) );
+      }
+
+      constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+
+      setDevice( device.ID );
+      cuCopyReference<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+         device.Reference[target_index], device.Reference[source_index], size
+      );
+      CHECK_KERNEL;
+   }
+
    void KdtreeCUDA::sort(std::vector<int>& end, int size)
    {
       const int max_sample_num = size / SampleStride + 1;
@@ -1179,25 +1275,58 @@ namespace cuda
 
       const int size_per_device = size / DeviceNum;
       if (DeviceNum > 1) {
-         for (auto& device : Devices) {
-            initializeReference( device, size_per_device, 0 );
-            sortPartially( device, 0, Dim, 0, size_per_device, 0 );
-         }
+         auto& d0 = Devices[0];
+         auto& d1 = Devices[1];
+         initializeReference( d0, size_per_device, 0 );
+         sortPartially( d0, 0, Dim, 0, size_per_device, 0 );
+         initializeReference( d1, size_per_device, 0 );
+         sortPartially( d1, 0, Dim, 0, size_per_device, 0 );
          sync();
 
          const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
          std::cout << " >> Pivot = " << pivot << "\n";
          sync();
 
-         mergeSwap( Devices[0], Dim, 0, size_per_device - pivot, size_per_device );
-         mergeSwap( Devices[1], Dim, 0, pivot, size_per_device );
+         mergeSwap( d0, Dim, 0, size_per_device - pivot, size_per_device );
+         mergeSwap( d1, Dim, 0, pivot, size_per_device );
          sync();
 
          std::vector<std::vector<int>> ends(DeviceNum, std::vector<int>(Dim));
-         Devices[0].TupleNum = ends[0][0] = removeDuplicates( Devices[0], 0, Dim, size_per_device, 0 );
-         // ...
-         Devices[1].TupleNum = ends[1][0] =
-            removeDuplicates( Devices[1], 0, Dim, size_per_device, 0, &Devices[0], size_per_device );
+         d0.TupleNum = ends[0][0] = removeDuplicates( Devices[0], 0, Dim, size_per_device, 0 );
+         fillUp( d0, size_per_device );
+         copyReferenceAndBuffer( d0, Dim, 0, size_per_device );
+         d1.TupleNum = ends[1][0] = removeDuplicates( d1, 0, Dim, size_per_device, 0, &Devices[0], size_per_device );
+         fillUp( d1, size_per_device );
+         copyReferenceAndBuffer( d1, Dim, 0, size_per_device );
+         sync();
+
+         setDevice( d0.ID );
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               &RootNode, d0.Reference[0] + d0.TupleNum - 1, sizeof( int ), cudaMemcpyDeviceToHost, d0.Stream
+            )
+         );
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               d0.Reference[0] + d0.TupleNum - 1, &size_per_device, sizeof( int ), cudaMemcpyHostToDevice, d0.Stream
+            )
+         );
+         d0.TupleNum--;
+
+         for (int axis = 1; axis < Dim; ++axis) {
+            copyReference( Devices[0], 0, axis, size_per_device );
+            sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
+            ends[0][axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
+         }
+         for (int axis = 1; axis < Dim; ++axis) {
+            copyReference( Devices[1], 0, axis, size_per_device );
+            sortPartially( Devices[1], axis, Dim, 0, size_per_device, axis );
+            ends[1][axis] = removeDuplicates( Devices[1], Dim, axis, size_per_device, axis );
+         }
+
+         for (int axis = 0; axis < Dim; ++axis) {
+            end[axis] = ends[0][axis] < 0 || ends[1][axis] < 0 ? -1 : ends[0][axis] + ends[1][axis];
+         }
       }
       else {
          setDevice( Devices[0].ID );
@@ -1209,6 +1338,19 @@ namespace cuda
          Devices[0].TupleNum = end[0];
       }
       sync();
+
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
+         CHECK_CUDA( cudaFree( device.Sort.RanksA ) );
+         CHECK_CUDA( cudaFree( device.Sort.RanksB ) );
+         CHECK_CUDA( cudaFree( device.Sort.LimitsA ) );
+         CHECK_CUDA( cudaFree( device.Sort.LimitsB ) );
+         CHECK_CUDA( cudaFree( device.Sort.Reference ) );
+         CHECK_CUDA( cudaFree( device.Sort.Buffer ) );
+         if (device.Sort.MergePath != nullptr) CHECK_CUDA( cudaFree( device.Sort.MergePath ) );
+         for (int axis = 0; axis <= Dim; ++axis) CHECK_CUDA( cudaFree( device.Buffer[axis] ) );
+      }
    }
 
    void KdtreeCUDA::create(const node_type* coordinates, int size)

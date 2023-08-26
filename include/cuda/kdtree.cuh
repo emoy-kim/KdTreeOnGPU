@@ -96,6 +96,7 @@ namespace cuda
 
       const int Dim;
       int NodeNum;
+      int RootNode;
       std::vector<Device> Devices;
 
       static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
@@ -126,6 +127,9 @@ namespace cuda
          Device* other_device = nullptr,
          int other_size = 0
       ) const;
+      void fillUp(Device& device, int size) const;
+      static void copyReferenceAndBuffer(Device& device, int source_index, int target_index, int size);
+      static void copyReference(Device& device, int source_index, int target_index, int size);
       void sort(std::vector<int>& end, int size);
    };
 }
