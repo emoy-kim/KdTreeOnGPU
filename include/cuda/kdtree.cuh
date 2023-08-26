@@ -90,7 +90,8 @@ namespace cuda
          node_type* CoordinatesDevicePtr;
 
          Device() :
-            ID( -1 ), TupleNum( 0 ), Sort(), Stream( nullptr ), SyncEvent( nullptr ), CoordinatesDevicePtr( nullptr ) {}
+            ID( -1 ), TupleNum( 0 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
+            CoordinatesDevicePtr( nullptr ) {}
       };
 
       const int Dim;
@@ -105,18 +106,26 @@ namespace cuda
       }
       void prepareCUDA();
       void initialize(Device& device, const node_type* coordinates, int size);
-      void initializeReference(Device& device, int size, int axis);
-      void sortPartially(Device& device, int source_index, int target_index, int start_offset, int size, int axis);
+      void initializeReference(Device& device, int size, int axis) const;
+      void sortPartially(
+         Device& device,
+         int source_index,
+         int target_index,
+         int start_offset,
+         int size,
+         int axis
+      ) const;
       [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
-      void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size);
+      void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size) const;
       [[nodiscard]] int removeDuplicates(
+         Device& device,
          int source_index,
          int target_index,
          int size,
          int axis,
          Device* other_device = nullptr,
          int other_size = 0
-      );
+      ) const;
       void sort(std::vector<int>& end, int size);
    };
 }

@@ -116,10 +116,8 @@ namespace cuda
 
    void KdtreeCUDA::initialize(Device& device, const node_type* coordinates, int size)
    {
-      if (device.CoordinatesDevicePtr != nullptr) {
-         throw std::runtime_error( "coordinates device ptr already allocated!" );
-      }
-      if (device.Root != nullptr) throw std::runtime_error( "k-d tree already allocated!" );
+      assert( device.Root == nullptr );
+      assert( device.CoordinatesDevicePtr == nullptr );
 
       setDevice( device.ID );
       CHECK_CUDA(
@@ -159,7 +157,7 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::initializeReference(Device& device, int size, int axis)
+   void KdtreeCUDA::initializeReference(Device& device, int size, int axis) const
    {
       setDevice( device.ID );
       std::vector<int*>& references = device.Reference;
@@ -491,7 +489,7 @@ namespace cuda
       int start_offset,
       int size,
       int axis
-   )
+   ) const
    {
       assert( device.CoordinatesDevicePtr != nullptr );
       assert( device.Reference[source_index] != nullptr && device.Reference[target_index] != nullptr );
@@ -874,7 +872,7 @@ namespace cuda
       int target_index,
       int merge_point,
       int size
-   )
+   ) const
    {
       setDevice( device.ID );
 
@@ -902,16 +900,86 @@ namespace cuda
       CHECK_KERNEL;
    }
 
+   __device__ int num_after_removal;
+   __device__ int removal_error;
+   __device__ int removal_error_address;
+
+   __global__
+   void cuRemoveDuplicates(
+      int* segment_lengths,
+      int* target_reference,
+      node_type* target_buffer,
+      const int* source_reference,
+      const node_type* source_buffer,
+      const node_type* coordinates,
+      const int* other_reference,
+      const node_type* other_coordinates,
+      int segment_size,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+
+   }
+
    int KdtreeCUDA::removeDuplicates(
+      Device& device,
       int source_index,
       int target_index,
       int size,
       int axis,
       Device* other_device,
       int other_size
-   )
+   ) const
    {
+      assert( device.Buffer[source_index] != nullptr && device.Buffer[target_index] != nullptr );
+      assert( device.Reference[source_index] != nullptr && device.Reference[target_index] != nullptr );
 
+      const int error = 0, error_address = 0x7FFFFFFF;
+      CHECK_CUDA(
+         cudaMemcpyToSymbolAsync(
+            removal_error, &error, sizeof( removal_error ), 0,
+            cudaMemcpyHostToDevice, device.Stream
+         )
+      );
+      CHECK_CUDA(
+         cudaMemcpyToSymbolAsync(
+            removal_error_address, &error_address, sizeof( removal_error_address ), 0,
+            cudaMemcpyHostToDevice, device.Stream
+         )
+      );
+
+      constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
+      constexpr int thread_num = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int segment = total_thread_num / 32;
+      const int segment_size = (size - 1 + segment) / segment;
+      const int* other_reference = other_device == nullptr ?
+         nullptr : other_device->Reference[source_index] + other_size - 1;
+      const node_type* other_coordinates = other_device == nullptr ? nullptr : other_device->CoordinatesDevicePtr;
+
+      int* segment_lengths;
+      setDevice( device.ID );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&segment_lengths), sizeof( int ) * segment ) );
+      cuRemoveDuplicates<<<block_num, thread_num>>>(
+         segment_lengths, device.Sort.Reference, device.Sort.Buffer,
+         device.Reference[source_index], device.Buffer[source_index],
+         device.CoordinatesDevicePtr, other_reference, other_coordinates,
+         segment_size, size, axis, Dim
+      );
+      CHECK_KERNEL;
+
+      CHECK_CUDA( cudaFree( segment_lengths ) );
+
+      int num;
+      CHECK_CUDA(
+         cudaMemcpyFromSymbolAsync(
+            &num, num_after_removal, sizeof( num_after_removal ), 0,
+            cudaMemcpyDeviceToHost, device.Stream
+         )
+      );
+      return num;
    }
 
    void KdtreeCUDA::sort(std::vector<int>& end, int size)
@@ -945,16 +1013,17 @@ namespace cuda
          sync();
 
          std::vector<std::vector<int>> ends(DeviceNum, std::vector<int>(Dim));
-         Devices[0].TupleNum = ends[0][0] = removeDuplicates( 0, Dim, size_per_device, 0 );
+         Devices[0].TupleNum = ends[0][0] = removeDuplicates( Devices[0], 0, Dim, size_per_device, 0 );
          // ...
-         Devices[1].TupleNum = ends[1][0] = removeDuplicates( 0, Dim, size_per_device, 0, &Devices[0], size_per_device );
+         Devices[1].TupleNum = ends[1][0] =
+            removeDuplicates( Devices[1], 0, Dim, size_per_device, 0, &Devices[0], size_per_device );
       }
       else {
          setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
             initializeReference( Devices[0], size_per_device, axis );
             sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
-            end[axis] = removeDuplicates( Dim, axis, size_per_device, axis );
+            end[axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          Devices[0].TupleNum = end[0];
       }
