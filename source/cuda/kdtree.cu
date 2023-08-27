@@ -188,6 +188,19 @@ namespace cuda
    }
 
    __device__
+   node_type compareSuperKey(const node_type* a, const node_type* b, int axis, int dim)
+   {
+      node_type difference = 0;
+      for (int i = 0; i < dim; ++i) {
+         int r = i + axis;
+         r = r < dim ? r : r - dim;
+         difference = a[r] - b[r];
+         if (difference != 0) break;
+      }
+      return difference;
+   }
+
+   __device__
    node_type compareSuperKey(
       node_type front_a,
       node_type front_b,
@@ -1987,18 +2000,103 @@ namespace cuda
       }
    }
 
+   __device__ int verify_error;
+
    __global__
    void cuVerify(
       int* node_sums,
       int* next_child,
       const int* child,
       const KdtreeNode* root,
+      const node_type* coordinates,
       int size,
       int axis,
       int dim
    )
    {
+      __shared__ int sums[SharedSizeLimit];
 
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const auto id = static_cast<int>(threadIdx.x);
+
+      int node, count = 0;
+      for (int i = index; i < size; i += step) {
+         node = child[i];
+         if (node >= 0) {
+            count++;
+            const int right = root[node].RightChildIndex;
+            next_child[i * 2 + 1] = right;
+            if (right != -1) {
+               if (compareSuperKey(
+                     coordinates + root[right].Index * dim, coordinates + root[node].Index * dim, axis, dim
+                   ) <= 0) {
+                  verify_error = 1;
+               }
+            }
+
+            const int left = root[node].LeftChildIndex;
+            next_child[i * 2] = left;
+            if (left != -1) {
+               if (compareSuperKey(
+                     coordinates + root[left].Index * dim, coordinates + root[node].Index * dim, axis, dim
+                   ) >= 0) {
+                  verify_error = 1;
+               }
+            }
+         }
+         else next_child[i * 2] = next_child[i * 2 + 1] = -1;
+      }
+      sums[id] = count;
+      __syncthreads();
+
+      for (int i = static_cast<int>(blockDim.x / 2); i > warpSize; i >>= 1) {
+         if (id < i) {
+            count += sums[id + i];
+            sums[id] = count;
+         }
+         __syncthreads();
+      }
+
+      if (id < warpSize) {
+         if (blockDim.x >= 2 * warpSize) count += sums[id + warpSize];
+         for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
+            count += __shfl_down( count, offset );
+         }
+      }
+
+      if (id == 0) node_sums[blockIdx.x] += count;
+   }
+
+   __global__
+   void cuSumNodeNum(int* node_sums)
+   {
+      __shared__ int sums[SharedSizeLimit];
+
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      const auto id = static_cast<int>(threadIdx.x);
+
+      int sum = 0;
+      for (int i = id; i < ThreadBlockNum; i += step) sum += node_sums[i];
+      sums[id] = sum;
+      __syncthreads();
+
+      for (int i = static_cast<int>(blockDim.x / 2); i > warpSize; i >>= 1) {
+         if (id < i) {
+            sum += sums[id + i];
+            sums[id] = sum;
+         }
+         __syncthreads();
+      }
+
+      if (id < warpSize) {
+         if (blockDim.x >= 2 * warpSize) sum += sums[id + warpSize];
+         for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
+            sum += __shfl_down( sum, offset );
+         }
+      }
+
+      if (id == 0) node_sums[blockIdx.x] += sum;
    }
 
    int KdtreeCUDA::verify(Device& device, int start_axis) const
@@ -2012,6 +2110,11 @@ namespace cuda
          )
       );
 
+      int error = 0;
+      CHECK_CUDA(
+         cudaMemcpyToSymbolAsync( verify_error, &error, sizeof( error ), 0, cudaMemcpyHostToDevice, device.Stream )
+      );
+
       int* child;
       int* next_child;
       for (int i = 0; i <= log_size; ++i) {
@@ -2022,10 +2125,18 @@ namespace cuda
          next_child = device.MidReferences[(i + 1) % 2];
          cuVerify<<<block_num, ThreadNum, 0, device.Stream>>>(
             device.NodeSums, next_child,
-            child, device.Root, needed_threads, axis, Dim
+            child, device.Root, device.CoordinatesDevicePtr, needed_threads, axis, Dim
          );
          CHECK_KERNEL;
+
+         CHECK_CUDA(
+            cudaMemcpyFromSymbolAsync( &error, verify_error, sizeof( error ), 0, cudaMemcpyDeviceToHost, device.Stream )
+         );
+         CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
       }
+
+      cuSumNodeNum<<<1, ThreadNum, 0, device.Stream>>>( device.NodeSums );
+      CHECK_KERNEL;
 
       int node_num;
       CHECK_CUDA( cudaMemcpyAsync( &node_num, device.NodeSums, sizeof( int ), cudaMemcpyDeviceToHost, device.Stream ) );
