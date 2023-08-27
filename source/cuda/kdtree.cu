@@ -1355,10 +1355,10 @@ namespace cuda
 
    __device__
    void partition(
-      int* segment_left_lengths,
-      int* segment_right_lengths,
       int* target_left_reference,
       int* target_right_reference,
+      int* segment_left_lengths,
+      int* segment_right_lengths,
       const int* source_reference,
       const node_type* __restrict__ coordinates,
       int mid_reference,
@@ -1439,7 +1439,7 @@ namespace cuda
       if (thread_index == 0 && segment_right_lengths != nullptr) segment_right_lengths[warp_index] = right_count;
    }
 
-    __global__
+   __global__
    void cuPartition(
       KdtreeNode* root,
       int* segment_left_lengths,
@@ -1476,9 +1476,9 @@ namespace cuda
       const int segment_size = (partition_size + warp_group_size - 1) / warp_group_size;
       const int mid_reference = primary_reference[mid];
       partition(
+         target_left_reference + start, target_right_reference + start,
          segment_left_lengths + (warp_index & ~(warp_group_size - 1)),
          segment_right_lengths + (warp_index & ~(warp_group_size - 1)),
-         target_left_reference + start, target_right_reference + start,
          source_reference + start, coordinates,
          mid_reference, segment_size, partition_size, axis, dim, warp_group_size
       );
@@ -1632,6 +1632,161 @@ namespace cuda
       copyReferenceWarp( target_reference + out_start, source_right_reference + start_segment, segment_size );
    }
 
+   __global__
+   void cuPartition(
+      KdtreeNode* root,
+      int* target_reference,
+      int* mid_references,
+      const int* last_mid_references,
+      const int* source_reference,
+      const int* primary_reference,
+      const node_type* __restrict__ coordinates,
+      int start,
+      int end,
+      int axis,
+      int dim,
+      int depth,
+      int log_warp_num
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int thread_index = index & (warpSize - 1);
+      const int warp_index = (index - thread_index) / warpSize;
+      const int loop_levels = depth - log_warp_num;
+      for (int loop = 0; loop < (1 << loop_levels); ++loop) {
+         int mid;
+         for (int i = 1; i <= loop_levels; ++i) {
+            mid = start + (end - start) / 2;
+            if (loop & (1 << (loop_levels - i))) start = mid + 1;
+            else end = mid - 1;
+         }
+         for (int i = 0; i < log_warp_num; ++i) {
+            mid = start + (end - start) / 2;
+            if (warp_index & (all_warps >> (i + 1))) start = mid + 1;
+            else end = mid - 1;
+         }
+         mid = start + (end - start) / 2;
+
+         const int partition_size = end - start + 1;
+         const int mid_reference = primary_reference[mid];
+         partition(
+            target_reference + start, target_reference + mid + 1, nullptr, nullptr,
+            source_reference + start, coordinates,
+            mid_reference, partition_size, partition_size, axis, dim, 1
+         );
+
+         if (thread_index == 0) {
+            const int m = warp_index + all_warps * loop;
+            mid_references[m] = mid_reference;
+            if (last_mid_references != nullptr) {
+               if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
+               else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+            }
+         }
+      }
+   }
+
+   __device__
+   void subpartition(
+      int* target_left_reference,
+      int* target_right_reference,
+      const int* source_reference,
+      const node_type* __restrict__ coordinates,
+      int mid_reference,
+      int segment_size,
+      int axis,
+      int dim,
+      int sub_warp_size
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      const int sub_warp_index = thread_index / sub_warp_size;
+      const int sub_thread_index = thread_index - sub_warp_index * sub_warp_size;
+      const int sub_warp_mask = ((1 << sub_warp_size) - 1) << sub_warp_index * sub_warp_size;
+      const int mask = (1 << thread_index) - 1;
+
+      int r;
+      node_type t;
+      if (sub_thread_index < segment_size) {
+         r = source_reference[sub_thread_index];
+         t = compareSuperKey(
+            coordinates[r * dim + axis], coordinates[mid_reference * dim + axis],
+            coordinates + r * dim, coordinates + mid_reference * dim, axis, dim
+         );
+      }
+      else t = 0;
+
+      int shuffle_mask = static_cast<int>(__ballot( t < 0 )) & sub_warp_mask;
+      if (t < 0) {
+         const int j = __popc( shuffle_mask & mask );
+         target_left_reference[j] = r;
+      }
+
+      shuffle_mask = static_cast<int>(__ballot( t > 0 )) & sub_warp_mask;
+      if (t > 0) {
+         const int j = __popc( shuffle_mask & mask );
+         target_right_reference[j] = r;
+      }
+   }
+
+   __global__
+   void cuPartition(
+      KdtreeNode* root,
+      int* target_reference,
+      int* mid_references,
+      const int* last_mid_references,
+      const int* source_reference,
+      const int* primary_reference,
+      const node_type* __restrict__ coordinates,
+      int start,
+      int end,
+      int axis,
+      int dim,
+      int depth,
+      int sub_size,
+      int log_sub_warp_num
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto all_sub_warps = static_cast<int>(blockDim.x * gridDim.x / sub_size);
+      const int sub_thread_index = index & (sub_size - 1);
+      const int sub_warp_index = (index - sub_thread_index) / sub_size;
+      const int loop_levels = depth - log_sub_warp_num;
+      for (int loop = 0; loop < (1 << loop_levels); ++loop) {
+         int mid;
+         for (int i = 1; i <= loop_levels; ++i) {
+            mid = start + (end - start) / 2;
+            if (loop & (1 << (loop_levels - i))) start = mid + 1;
+            else end = mid - 1;
+         }
+         for (int i = 0; i < log_sub_warp_num; ++i) {
+            mid = start + (end - start) / 2;
+            if (sub_warp_index & (all_sub_warps >> (i + 1))) start = mid + 1;
+            else end = mid - 1;
+         }
+         mid = start + (end - start) / 2;
+
+         const int partition_size = end - start + 1;
+         const int mid_reference = primary_reference[mid];
+         subpartition(
+            target_reference + start, target_reference + mid + 1,
+            source_reference + start, coordinates,
+            mid_reference, partition_size, axis, dim, sub_size
+         );
+
+         if (sub_thread_index == 0) {
+            const int m = sub_warp_index + all_sub_warps * loop;
+            mid_references[m] = mid_reference;
+            if (last_mid_references != nullptr) {
+               if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
+               else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+            }
+         }
+      }
+   }
+
    void KdtreeCUDA::partitionDimension(Device& device, int axis, int depth) const
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
@@ -1666,14 +1821,54 @@ namespace cuda
          }
       }
       else {
-         if (log_size - depth > 5) {
+         const int log_sub_size = log_size - depth;
+         if (log_sub_size > 5) {
             for (int i = 1; i < Dim; ++i) {
                int r = i + axis;
                r = r < Dim ? r : r - Dim;
+               cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+                  device.Root, device.Reference[Dim], mid_references,
+                  last_mid_references, device.Reference[r], device.Reference[axis],
+                  device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth, log_warp_num
+               );
+               CHECK_KERNEL;
 
+               cuCopyReference<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+                  device.Reference[r], device.Reference[Dim], device.TupleNum
+               );
+               CHECK_KERNEL;
+            }
+         }
+         else {
+            const int log_sub_warp_num = log_warp_num - (log_sub_size - 5);
+            for (int i = 1; i < Dim; ++i) {
+               int r = i + axis;
+               r = r < Dim ? r : r - Dim;
+               cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+                  device.Root, device.Reference[Dim], mid_references,
+                  last_mid_references, device.Reference[r], device.Reference[axis],
+                  device.CoordinatesDevicePtr,
+                  0, device.TupleNum - 1, axis, Dim, depth, 1 << log_sub_size, log_sub_warp_num
+               );
+               CHECK_KERNEL;
+
+               cuCopyReference<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+                  device.Reference[r], device.Reference[Dim], device.TupleNum
+               );
+               CHECK_KERNEL;
             }
          }
       }
+
+      if (depth == 0) {
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               &device.RootNode, device.MidReferences[0], sizeof( int ), cudaMemcpyDeviceToHost, device.Stream
+            )
+         );
+      }
+
+      assert( device.RootNode != -1 );
    }
 
    int KdtreeCUDA::build()
