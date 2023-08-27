@@ -1353,17 +1353,103 @@ namespace cuda
       }
    }
 
-    __global__
-   void cuPartition(
-      KdtreeNode* root,
+   __device__
+   void partition(
+      int* segment_left_lengths,
+      int* segment_right_lengths,
       int* target_left_reference,
       int* target_right_reference,
       const int* source_reference,
+      const node_type* __restrict__ coordinates,
+      int mid_reference,
+      int segment_size,
+      int partition_size,
+      int axis,
+      int dim,
+      int warp_group_size
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int warp_index = ((index - thread_index) / warpSize) % warp_group_size;
+      const int start_segment = warp_index * segment_size;
+      if (start_segment + segment_size > partition_size) segment_size = partition_size - start_segment;
+
+      __shared__ int left_reference[SharedSizeLimit];
+      __shared__ int right_reference[SharedSizeLimit];
+
+      const int* in_reference = source_reference + start_segment;
+      int* out_left_reference = target_left_reference + start_segment;
+      int* out_right_reference = target_right_reference + start_segment;
+      const int shared_base = 2 * warpSize * (((index - thread_index) / warpSize) % warps_per_block);
+      const int shared_address_mask = 2 * warpSize - 1;
+      const int mask = (1 << thread_index) - 1;
+
+      node_type t;
+      int r, old_left_count, old_right_count, left_count = 0, right_count = 0;
+      for (int i = 0; i < segment_size; i += warpSize) {
+         if (i + thread_index < segment_size) {
+            r = in_reference[thread_index];
+            t = compareSuperKey(
+               coordinates[r * dim + axis], coordinates[mid_reference * dim + axis],
+               coordinates + r * dim, coordinates + mid_reference * dim, axis, dim
+            );
+         }
+         else t = 0;
+         in_reference += warpSize;
+
+         int shuffle_mask = static_cast<int>(__ballot( t < 0 ));
+         if (t < 0) {
+            const int j = __popc( shuffle_mask & mask );
+            left_reference[shared_base + ((left_count + j) & shared_address_mask)] = r;
+         }
+
+         old_left_count = left_count;
+         left_count += __popc( shuffle_mask );
+         if (((old_left_count ^ left_count) & warpSize) != 0) {
+            out_left_reference[(old_left_count & ~(warpSize - 1)) + thread_index] =
+               left_reference[shared_base + (old_left_count & warpSize) + thread_index];
+         }
+
+         shuffle_mask = static_cast<int>(__ballot( t > 0 ));
+         if (t > 0) {
+            const int j = __popc( shuffle_mask & mask );
+            right_reference[shared_base + ((right_count + j) & shared_address_mask)] = r;
+         }
+
+         old_right_count = right_count;
+         right_count += __popc( shuffle_mask );
+         if (((old_right_count ^ right_count) & warpSize) != 0) {
+            out_right_reference[(old_right_count & ~(warpSize - 1)) + thread_index] =
+               right_reference[shared_base + (old_right_count & warpSize) + thread_index];
+         }
+      }
+
+      if ((left_count & (warpSize - 1)) > thread_index) {
+         out_left_reference[(left_count & ~(warpSize - 1)) + thread_index] =
+            left_reference[shared_base + (left_count & warpSize) + thread_index];
+      }
+      if ((right_count & (warpSize - 1)) > thread_index) {
+         out_right_reference[(right_count & ~(warpSize - 1)) + thread_index] =
+            right_reference[shared_base + (right_count & warpSize) + thread_index];
+      }
+
+      if (thread_index == 0 && segment_left_lengths != nullptr) segment_left_lengths[warp_index] = left_count;
+      if (thread_index == 0 && segment_right_lengths != nullptr) segment_right_lengths[warp_index] = right_count;
+   }
+
+    __global__
+   void cuPartition(
+      KdtreeNode* root,
+      int* segment_left_lengths,
+      int* segment_right_lengths,
+      int* target_left_reference,
+      int* target_right_reference,
+      int* mid_references,
+      const int* last_mid_references,
+      const int* source_reference,
       const int* primary_reference,
-      const int* segment_left_lengths,
-      const int* segment_right_lengths,
-      const int* mid_reference,
-      const int* last_mid_reference,
       const node_type* __restrict__ coordinates,
       int start,
       int end,
@@ -1372,40 +1458,227 @@ namespace cuda
       int depth
    )
    {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int warp_group_size = all_warps >> depth;
+      const int thread_index = index & (warpSize - 1);
+      const int warp_index = (index - thread_index) / warpSize;
+
+      int mid;
+      for (int i = 0; i < depth; ++i) {
+         mid = start + (end - start) / 2;
+         if (warp_index & (all_warps >> (i + 1))) start = mid + 1;
+         else end = mid - 1;
+      }
+      mid = start + (end - start) / 2;
+
+      const int partition_size = end - start + 1;
+      const int segment_size = (partition_size + warp_group_size - 1) / warp_group_size;
+      const int mid_reference = primary_reference[mid];
+      partition(
+         segment_left_lengths + (warp_index & ~(warp_group_size - 1)),
+         segment_right_lengths + (warp_index & ~(warp_group_size - 1)),
+         target_left_reference + start, target_right_reference + start,
+         source_reference + start, coordinates,
+         mid_reference, segment_size, partition_size, axis, dim, warp_group_size
+      );
+
+      if (thread_index == 0) {
+         const int m = warp_index / warp_group_size;
+         mid_references[m] = mid_reference;
+         if (last_mid_references != nullptr) {
+            if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
+            else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+         }
+      }
+   }
+
+   __device__
+   void copyReferenceWarp(int* target_reference, const int* source_reference, int size)
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int thread_index = index & (warpSize - 1);
+      if (size < warpSize * 200) {
+         for (int i = thread_index; i < size; i += warpSize) target_reference[i] = source_reference[i];
+         return;
+      }
+
+      __shared__ int tag[SharedSizeLimit];
+      __shared__ int reference[SharedSizeLimit];
+
+      const int warp_index = (index - thread_index) / warpSize;
+      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int shared_base = 2 * warpSize * (warp_index % warps_per_block);
+      const int shared_address_mask = 2 * warpSize - 1;
+      tag[shared_base + thread_index] = 0;
+      tag[shared_base + thread_index + warpSize] = 0;
+
+      int* ptr = reinterpret_cast<int*>(reinterpret_cast<ulong>(target_reference) & ~(sizeof( int ) * warpSize - 1));
+      int count = static_cast<int>(reinterpret_cast<ulong>(target_reference) - reinterpret_cast<ulong>(ptr));
+      target_reference = ptr;
+
+      ptr = reinterpret_cast<int*>(reinterpret_cast<ulong>(source_reference) & ~(sizeof( int ) * warpSize - 1));
+      int in_count = warpSize +
+         static_cast<int>(reinterpret_cast<ulong>(ptr) - reinterpret_cast<ulong>(source_reference));
+
+      int r;
+      if (thread_index < in_count) {
+         r = source_reference[thread_index];
+         tag[shared_base + ((count + thread_index) & shared_address_mask)] = 1;
+         reference[shared_base + ((count + thread_index) & shared_address_mask)] = r;
+      }
+
+      source_reference = ptr + warpSize;
+      int old_count = count;
+      count += in_count;
+      if (((old_count ^ count) & warpSize) != 0) {
+         if (tag[shared_base + (old_count & warpSize) + thread_index] == 1) {
+            target_reference[(old_count & ~(warpSize - 1)) + thread_index] =
+               reference[shared_base + (old_count & warpSize) + thread_index];
+            tag[shared_base + (old_count & warpSize) + thread_index] = 0;
+         }
+      }
+      else {
+         r = source_reference[thread_index];
+         tag[shared_base + ((count + thread_index) & shared_address_mask)] = 1;
+         reference[shared_base + ((count + thread_index) & shared_address_mask)] = r;
+         old_count = count;
+         count += warpSize;
+         if (((old_count ^ count) & warpSize) != 0) {
+            if (tag[shared_base + (old_count & warpSize) + thread_index] == 1) {
+               target_reference[(old_count & ~(warpSize - 1)) + thread_index] =
+                  reference[shared_base + (old_count & warpSize) + thread_index];
+               tag[shared_base + (old_count & warpSize) + thread_index] = 0;
+            }
+         }
+         in_count += warpSize;
+         source_reference += warpSize;
+      }
+
+      while (in_count < size) {
+         if (in_count + thread_index < size) {
+            r = source_reference[thread_index];
+            tag[shared_base + ((count + thread_index) & shared_address_mask)] = 1;
+            reference[shared_base + ((count + thread_index) & shared_address_mask)] = r;
+         }
+         old_count = count;
+         count += in_count + warpSize <= size ? warpSize : size - in_count;
+         if (((old_count ^ count) & warpSize) != 0) {
+            if (tag[shared_base + (old_count & warpSize) + thread_index] == 1) {
+               target_reference[(old_count & ~(warpSize - 1)) + thread_index] =
+                  reference[shared_base + (old_count & warpSize) + thread_index];
+               tag[shared_base + (old_count & warpSize) + thread_index] = 0;
+            }
+         }
+         in_count += warpSize;
+         source_reference += warpSize;
+      }
+
+      if (tag[shared_base + (count & warpSize) + thread_index] == 1) {
+         target_reference[(count & ~(warpSize - 1)) + thread_index] =
+            reference[shared_base + (count & warpSize) + thread_index];
+         tag[shared_base + (count & warpSize) + thread_index] = 0;
+      }
+   }
+
+   __global__
+   void cuRemovePartitionGaps(
+      int* target_reference,
+      const int* source_left_reference,
+      const int* source_right_reference,
+      const int* segment_left_lengths,
+      const int* segment_right_lengths,
+      int start,
+      int end,
+      int depth
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int warp_group_size = all_warps >> depth;
+      const int thread_index = index & (warpSize - 1);
+      const int warp_index = (index - thread_index) / warpSize;
+
+      int mid;
+      for (int i = 0; i < depth; ++i) {
+         mid = start + (end - start) / 2;
+         if (warp_index & (all_warps >> (i + 1))) start = mid + 1;
+         else end = mid - 1;
+      }
+      mid = start + (end - start) / 2;
+
+      const int partition_size = end - start + 1;
+      int segment_size = (partition_size + warp_group_size - 1) / warp_group_size;
+      const int start_segment = start + segment_size * (warp_index - (warp_index & ~(warp_group_size - 1)));
+
+      int out_start = start;
+      if (thread_index == 0) {
+         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += segment_left_lengths[i];
+         segment_size = segment_left_lengths[warp_index];
+      }
+
+      out_start = __shfl( out_start, 0 );
+      segment_size = __shfl( segment_size, 0 );
+      copyReferenceWarp( target_reference + out_start, source_left_reference + start_segment, segment_size );
+
+      out_start = mid + 1;
+      if (thread_index == 0) {
+         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += segment_right_lengths[i];
+         segment_size = segment_right_lengths[warp_index];
+      }
+
+      out_start = __shfl( out_start, 0 );
+      segment_size = __shfl( segment_size, 0 );
+      copyReferenceWarp( target_reference + out_start, source_right_reference + start_segment, segment_size );
    }
 
    void KdtreeCUDA::partitionDimension(Device& device, int axis, int depth) const
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int warp_num = total_thread_num / warpSize;
+      constexpr int warp_num = total_thread_num / WarpSize;
       const auto log_warp_num = static_cast<int>(std::log2( static_cast<double>(warp_num) ));
       const auto log_size = static_cast<int>(std::ceil( std::log2( static_cast<double>(device.TupleNum) ) ));
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
 
       setDevice( device.ID );
-      int* mid_reference = device.MidReferences[depth % 2];
-      int* last_mid_reference = depth == 0 ? nullptr : device.MidReferences[(depth - 1) % 2];
+      int* mid_references = device.MidReferences[depth % 2];
+      int* last_mid_references = depth == 0 ? nullptr : device.MidReferences[(depth - 1) % 2];
       if (depth < log_warp_num) {
-         int loop_levels = 0;
          for (int i = 1; i < Dim; ++i) {
             int r = i + axis;
             r = r < Dim ? r : r - Dim;
             cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
-               device.Root, device.Reference[Dim], device.Reference[Dim + 1],
-               device.Reference[r], device.Reference[axis],
-               device.LeftSegmentLengths, device.RightSegmentLengths,
-               mid_reference, last_mid_reference, device.CoordinatesDevicePtr,
-               0, device.TupleNum - 1, axis, Dim, depth
+               device.Root, device.LeftSegmentLengths, device.RightSegmentLengths,
+               device.Reference[Dim], device.Reference[Dim + 1], mid_references,
+               last_mid_references, device.Reference[r], device.Reference[axis],
+               device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth
             );
             CHECK_KERNEL;
+
+            cuRemovePartitionGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+               device.Reference[r],
+               device.Reference[Dim], device.Reference[Dim + 1],
+               device.LeftSegmentLengths, device.RightSegmentLengths,
+               0, device.TupleNum - 1, depth
+            );
+            CHECK_KERNEL;
+         }
+      }
+      else {
+         if (log_size - depth > 5) {
+            for (int i = 1; i < Dim; ++i) {
+               int r = i + axis;
+               r = r < Dim ? r : r - Dim;
+
+            }
          }
       }
    }
 
    int KdtreeCUDA::build()
    {
-      constexpr int warp_num = ThreadBlockNum * ThreadNum / warpSize;
+      constexpr int warp_num = ThreadBlockNum * ThreadNum / WarpSize;
       for (auto& device : Devices) {
          setDevice( device.ID );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.LeftSegmentLengths), sizeof( int ) * warp_num ) );

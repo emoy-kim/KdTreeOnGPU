@@ -35,6 +35,7 @@ typedef float node_type;
 
 namespace cuda
 {
+   constexpr int WarpSize = 32;
    constexpr int ThreadNum = 512;
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
