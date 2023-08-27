@@ -5,6 +5,7 @@
 #include <sstream>
 #include <array>
 #include <vector>
+#include <algorithm>
 #include <cuda_runtime.h>
 
 #ifdef NDEBUG
@@ -92,12 +93,13 @@ namespace cuda
          node_type* CoordinatesDevicePtr;
          int* LeftSegmentLengths;
          int* RightSegmentLengths;
+         int* NodeSums;
          std::array<int*, 2> MidReferences;
 
          Device() :
             ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
             CoordinatesDevicePtr( nullptr ), LeftSegmentLengths( nullptr ), RightSegmentLengths( nullptr ),
-            MidReferences{} {}
+            NodeSums( nullptr ), MidReferences{} {}
       };
 
       const int Dim;
@@ -140,5 +142,7 @@ namespace cuda
       void partitionDimension(Device& device, int axis, int depth) const;
       void partitionDimensionFinal(Device& device, int axis, int depth) const;
       void build();
+      [[nodiscard]] int verify(Device& device, int start_axis) const;
+      [[nodiscard]] int verify();
    };
 }
