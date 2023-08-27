@@ -1955,7 +1955,7 @@ namespace cuda
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[1]), sizeof( int ) * device.TupleNum ) );
       }
 
-      const int start = DeviceNum == 1 ? 0 : 1;
+      const int start_axis = DeviceNum == 1 ? 0 : 1;
       for (auto& device : Devices) {
          assert( !device.Reference.empty() );
          for (int axis = 0; axis < Dim; ++axis) assert( device.Reference[axis] != nullptr );
@@ -1969,10 +1969,10 @@ namespace cuda
 
          const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(device.TupleNum) ) ));
          for (int i = 0; i < depth - 1; ++i) {
-            const int axis = (i + start) % Dim;
+            const int axis = (i + start_axis) % Dim;
             partitionDimension( device, axis, i );
          }
-         partitionDimensionFinal( device, (depth - 1 + start) % Dim, depth - 1 );
+         partitionDimensionFinal( device, (depth - 1 + start_axis) % Dim, depth - 1 );
       }
 
       if (DeviceNum == 1) RootNode = Devices[0].RootNode;
@@ -1987,6 +1987,83 @@ namespace cuda
       }
    }
 
+   __global__
+   void cuVerify(
+      int* node_sums,
+      int* next_child,
+      const int* child,
+      const KdtreeNode* root,
+      int size,
+      int axis,
+      int dim
+   )
+   {
+
+   }
+
+   int KdtreeCUDA::verify(Device& device, int start_axis) const
+   {
+      const auto log_size = static_cast<int>(std::floor( std::log2( static_cast<double>(device.TupleNum) ) ));
+
+      setDevice( device.ID );
+      CHECK_CUDA(
+         cudaMemcpyAsync(
+            device.MidReferences[0], &device.RootNode, sizeof( int ), cudaMemcpyHostToDevice, device.Stream
+         )
+      );
+
+      int* child;
+      int* next_child;
+      for (int i = 0; i <= log_size; ++i) {
+         const int needed_threads = 1 << i;
+         const int block_num = std::clamp( needed_threads / ThreadNum, 1, ThreadBlockNum );
+         const int axis = (i + start_axis) % Dim;
+         child = device.MidReferences[i % 2];
+         next_child = device.MidReferences[(i + 1) % 2];
+         cuVerify<<<block_num, ThreadNum, 0, device.Stream>>>(
+            device.NodeSums, next_child,
+            child, device.Root, needed_threads, axis, Dim
+         );
+         CHECK_KERNEL;
+      }
+
+      int node_num;
+      CHECK_CUDA( cudaMemcpyAsync( &node_num, device.NodeSums, sizeof( int ), cudaMemcpyDeviceToHost, device.Stream ) );
+      return node_num;
+   }
+
+   int KdtreeCUDA::verify()
+   {
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         CHECK_CUDA(
+            cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[0]), sizeof( int ) * 2 * device.TupleNum )
+         );
+         CHECK_CUDA(
+            cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[1]), sizeof( int ) * 2 * device.TupleNum )
+         );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.NodeSums), sizeof( int ) * ThreadBlockNum ) );
+         CHECK_CUDA( cudaMemset( device.NodeSums, 0, sizeof( int ) * ThreadBlockNum ) );
+      }
+
+      int node_num = 0;
+      if (DeviceNum > 1) {
+         node_num += verify( Devices[0], 1 );
+         node_num += verify( Devices[1], 1 );
+         node_num++;
+      }
+      else node_num += verify( Devices[0], 0 );
+
+      for (auto& device : Devices) {
+         setDevice( device.ID );
+         CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
+         CHECK_CUDA( cudaFree( device.MidReferences[0] ) );
+         CHECK_CUDA( cudaFree( device.MidReferences[1] ) );
+         CHECK_CUDA( cudaFree( device.NodeSums ) );
+      }
+      return node_num;
+   }
+
    void KdtreeCUDA::create(const node_type* coordinates, int size)
    {
       const int size_per_device = size / DeviceNum;
@@ -1996,14 +2073,34 @@ namespace cuda
       }
       cudaDeviceSynchronize();
 
+      auto start_time = std::chrono::system_clock::now();
       std::vector<int> end(Dim);
       sort( end, size );
+      auto end_time = std::chrono::system_clock::now();
+      const auto sort_time =
+         static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
       for (int i = 0; i < Dim - 1; ++i) {
          assert( end[i] >= 0 );
          for (int j = i + 1; j < Dim; ++j) assert( end[i] == end[j] );
       }
 
+      start_time = std::chrono::system_clock::now();
       build();
+      end_time = std::chrono::system_clock::now();
+      const auto build_time =
+         static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
+
+      start_time = std::chrono::system_clock::now();
+      NodeNum = verify();
+      end_time = std::chrono::system_clock::now();
+      const auto verify_time =
+         static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
+
+      std::cout << " >> Number of nodes = " << NodeNum << "\n" << std::fixed << std::setprecision( 2 )
+         << " >> Total Time = "  << sort_time + build_time + verify_time << " sec."
+         << "\n\t* Sort Time = " << sort_time << " sec."
+         << "\n\t* Build Time = " << build_time << " sec."
+         << "\n\t* Verify Time = " << verify_time << " sec.\n\n";
    }
 }
