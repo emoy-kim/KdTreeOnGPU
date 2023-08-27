@@ -138,6 +138,7 @@ namespace cuda
       static void copyReference(Device& device, int source_index, int target_index, int size);
       void sort(std::vector<int>& end, int size);
       void partitionDimension(Device& device, int axis, int depth) const;
-      [[nodiscard]] int build();
+      void partitionDimensionFinal(Device& device, int axis, int depth) const;
+      void build();
    };
 }
