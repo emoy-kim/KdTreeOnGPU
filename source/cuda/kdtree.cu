@@ -2214,4 +2214,9 @@ namespace cuda
          << "\n\t* Build Time = " << build_time << " sec."
          << "\n\t* Verify Time = " << verify_time << " sec.\n\n";
    }
+
+   void KdtreeCUDA::print() const
+   {
+
+   }
 }

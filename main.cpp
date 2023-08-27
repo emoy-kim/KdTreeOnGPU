@@ -44,7 +44,7 @@ void testMultithreading()
 
 void testCUDA()
 {
-   constexpr int n = 1024 * 128;
+   constexpr int n = 1024;
    std::vector<glm::vec3> coordinates;
    for (int i = 0; i < n; ++i) {
       coordinates.emplace_back(
@@ -55,7 +55,7 @@ void testCUDA()
    }
 
    cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), n, 3);
-
+   kdtree.print();
 }
 
 int main()

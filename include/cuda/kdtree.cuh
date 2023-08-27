@@ -61,6 +61,7 @@ namespace cuda
       ~KdtreeCUDA();
 
       void create(const node_type* coordinates, int size);
+      void print() const;
 
    private:
       inline static int DeviceNum = 0;
