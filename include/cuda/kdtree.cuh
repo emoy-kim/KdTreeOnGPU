@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef USE_CUDA
 #include <iostream>
 #include <iomanip>
 #include <cassert>
@@ -121,14 +122,7 @@ namespace cuda
       void prepareCUDA();
       void initialize(Device& device, const node_type* coordinates, int size);
       void initializeReference(Device& device, int size, int axis) const;
-      void sortPartially(
-         Device& device,
-         int source_index,
-         int target_index,
-         int start_offset,
-         int size,
-         int axis
-      ) const;
+      void sortPartially(Device& device, int source_index, int target_index, int size, int axis) const;
       [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
       void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size) const;
       [[nodiscard]] int removeDuplicates(
@@ -153,3 +147,4 @@ namespace cuda
       void print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;
    };
 }
+#endif

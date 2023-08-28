@@ -1,5 +1,6 @@
 #include "cuda/kdtree.cuh"
 
+#ifdef USE_CUDA
 namespace cuda
 {
    __host__ __device__
@@ -174,8 +175,8 @@ namespace cuda
    __global__
    void cuCopyCoordinates(
       node_type* target,
-      const node_type* coordinates,
       const int* reference,
+      const node_type* coordinates,
       int size,
       int axis,
       int dim
@@ -285,7 +286,7 @@ namespace cuda
             reference_x, buffer_x, base_reference + step, base_buffer + step, coordinates, step, step, axis, dim, false
          ) + i;
          const int y = search(
-            reference_y, buffer_y, base_reference, base_buffer, coordinates, step, step, axis, dim, false
+            reference_y, buffer_y, base_reference, base_buffer, coordinates, step, step, axis, dim, true
          ) + i;
 
          __syncthreads();
@@ -499,7 +500,6 @@ namespace cuda
       Device& device,
       int source_index,
       int target_index,
-      int start_offset,
       int size,
       int axis
    ) const
@@ -513,10 +513,8 @@ namespace cuda
             cudaMalloc( reinterpret_cast<void**>(&device.Buffer[source_index]), sizeof( node_type ) * size )
          );
          cuCopyCoordinates<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>(
-            device.Buffer[source_index],
-            device.CoordinatesDevicePtr + start_offset * Dim,
-            device.Reference[source_index],
-            size, axis, Dim
+            device.Buffer[source_index], device.Reference[source_index],
+            device.CoordinatesDevicePtr, size, axis, Dim
          );
          CHECK_KERNEL;
       }
@@ -537,11 +535,11 @@ namespace cuda
          in_buffer = device.Sort.Buffer;
          in_reference = device.Sort.Reference;
          out_buffer = device.Buffer[target_index];
-         out_reference = device.Reference[target_index] + start_offset;
+         out_reference = device.Reference[target_index];
       }
       else {
          in_buffer = device.Buffer[target_index];
-         in_reference = device.Reference[target_index] + start_offset;
+         in_reference = device.Reference[target_index];
          out_buffer = device.Sort.Buffer;
          out_reference = device.Sort.Reference;
       }
@@ -553,7 +551,7 @@ namespace cuda
       int thread_num = SharedSizeLimit / 2;
       cuSort<<<block_num, thread_num, 0, device.Stream>>>(
          in_reference, in_buffer,
-         device.Reference[source_index] + start_offset, device.Buffer[source_index],
+         device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, axis, Dim
       );
       CHECK_KERNEL;
@@ -1135,7 +1133,7 @@ namespace cuda
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
-      constexpr int segment = total_thread_num / 32;
+      constexpr int segment = total_thread_num / WarpSize;
       const int segment_size = (size - 1 + segment) / segment;
       const int* other_reference = other_device == nullptr ?
          nullptr : other_device->Reference[source_index] + other_size - 1;
@@ -1144,7 +1142,7 @@ namespace cuda
       int* segment_lengths;
       setDevice( device.ID );
       CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&segment_lengths), sizeof( int ) * segment ) );
-      cuRemoveDuplicates<<<block_num, thread_num_per_block>>>(
+      cuRemoveDuplicates<<<block_num, thread_num_per_block, 0, device.Stream>>>(
          segment_lengths, device.Sort.Reference, device.Sort.Buffer,
          device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, other_reference, other_coordinates,
@@ -1152,7 +1150,7 @@ namespace cuda
       );
       CHECK_KERNEL;
 
-      cuRemoveGaps<<<block_num, thread_num_per_block>>>(
+      cuRemoveGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
          device.Reference[target_index], device.Buffer[target_index],
          device.Sort.Reference, device.Sort.Buffer,
          segment_lengths, segment_size, size
@@ -1292,9 +1290,9 @@ namespace cuda
          auto& d0 = Devices[0];
          auto& d1 = Devices[1];
          initializeReference( d0, size_per_device, 0 );
-         sortPartially( d0, 0, Dim, 0, size_per_device, 0 );
+         sortPartially( d0, 0, Dim, size_per_device, 0 );
          initializeReference( d1, size_per_device, 0 );
-         sortPartially( d1, 0, Dim, 0, size_per_device, 0 );
+         sortPartially( d1, 0, Dim, size_per_device, 0 );
          sync();
 
          const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
@@ -1329,12 +1327,12 @@ namespace cuda
 
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[0], 0, axis, size_per_device );
-            sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
+            sortPartially( Devices[0], axis, Dim, size_per_device, axis );
             ends[0][axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[1], 0, axis, size_per_device );
-            sortPartially( Devices[1], axis, Dim, 0, size_per_device, axis );
+            sortPartially( Devices[1], axis, Dim, size_per_device, axis );
             ends[1][axis] = removeDuplicates( Devices[1], Dim, axis, size_per_device, axis );
          }
 
@@ -1346,7 +1344,7 @@ namespace cuda
          setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
             initializeReference( Devices[0], size_per_device, axis );
-            sortPartially( Devices[0], axis, Dim, 0, size_per_device, axis );
+            sortPartially( Devices[0], axis, Dim, size_per_device, axis );
             end[axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          Devices[0].TupleNum = end[0];
@@ -2262,3 +2260,4 @@ namespace cuda
       print( kd_nodes, RootNode, 0 );
    }
 }
+#endif

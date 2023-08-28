@@ -42,6 +42,7 @@ void testMultithreading()
    }
 }
 
+#ifdef USE_CUDA
 void testCUDA()
 {
    constexpr int n = 1024;
@@ -54,13 +55,17 @@ void testCUDA()
       );
    }
 
-   cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), n, 3);
+   cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), static_cast<int>(coordinates.size()), 3);
    kdtree.print();
 }
+#endif
 
 int main()
 {
    //testMultithreading();
+
+#ifdef USE_CUDA
    testCUDA();
+#endif
    return 0;
 }
