@@ -62,7 +62,7 @@ void testCUDA()
 
 int main()
 {
-   //testMultithreading();
+   testMultithreading();
 
 #ifdef USE_CUDA
    testCUDA();
