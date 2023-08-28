@@ -30,10 +30,11 @@ namespace cuda
       return 1 << (bits - __clz( x - 1 ));
    }
 
-   KdtreeCUDA::KdtreeCUDA(const node_type* vertices, int size, int dim) : Dim( dim ), NodeNum( 0 ), RootNode( -1 )
+   KdtreeCUDA::KdtreeCUDA(const node_type* vertices, int size, int dim) :
+      Coordinates( vertices ), Dim( dim ), TupleNum( size ), NodeNum( 0 ), RootNode( -1 )
    {
       if (DeviceNum == 0) prepareCUDA();
-      create( vertices, size );
+      create();
    }
 
    KdtreeCUDA::~KdtreeCUDA()
@@ -1272,9 +1273,9 @@ namespace cuda
       CHECK_KERNEL;
    }
 
-   void KdtreeCUDA::sort(std::vector<int>& end, int size)
+   void KdtreeCUDA::sort(std::vector<int>& end)
    {
-      const int max_sample_num = size / SampleStride + 1;
+      const int max_sample_num = TupleNum / SampleStride + 1;
       for (auto& device : Devices) {
          setDevice( device.ID );
          device.Sort.MaxSampleNum = max_sample_num;
@@ -1282,11 +1283,11 @@ namespace cuda
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RanksB), sizeof( int ) * max_sample_num ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsA), sizeof( int ) * max_sample_num ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsB), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Reference), sizeof( int ) * size ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Buffer), sizeof( node_type ) * size ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Reference), sizeof( int ) * TupleNum ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Buffer), sizeof( node_type ) * TupleNum ) );
       }
 
-      const int size_per_device = size / DeviceNum;
+      const int size_per_device = TupleNum / DeviceNum;
       if (DeviceNum > 1) {
          auto& d0 = Devices[0];
          auto& d1 = Devices[1];
@@ -2175,18 +2176,18 @@ namespace cuda
       return node_num;
    }
 
-   void KdtreeCUDA::create(const node_type* coordinates, int size)
+   void KdtreeCUDA::create()
    {
-      const int size_per_device = size / DeviceNum;
+      const int size_per_device = TupleNum / DeviceNum;
       for (int i = 0; i < DeviceNum; ++i) {
-         const node_type* ptr = coordinates + i * Dim * size_per_device;
+         const node_type* ptr = Coordinates + i * Dim * size_per_device;
          initialize( Devices[i], ptr, size_per_device );
       }
       cudaDeviceSynchronize();
 
       auto start_time = std::chrono::system_clock::now();
       std::vector<int> end(Dim);
-      sort( end, size );
+      sort( end );
       auto end_time = std::chrono::system_clock::now();
       const auto sort_time =
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
@@ -2195,6 +2196,8 @@ namespace cuda
          assert( end[i] >= 0 );
          for (int j = i + 1; j < Dim; ++j) assert( end[i] == end[j] );
       }
+
+      std::cout << " >> " << TupleNum - end[0] << " duplicates removed\n";
 
       start_time = std::chrono::system_clock::now();
       build();
@@ -2215,8 +2218,47 @@ namespace cuda
          << "\n\t* Verify Time = " << verify_time << " sec.\n\n";
    }
 
+   void KdtreeCUDA::print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const
+   {
+      if (kd_nodes[index].RightChildIndex >= 0) print( kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+
+      for (int i = 0; i < depth; ++i) std::cout << "       ";
+
+      const node_type* tuple = Coordinates + kd_nodes[index].Index;
+      std::cout << "(" << tuple[0] << ",";
+      for (int i = 1; i < Dim - 1; ++i) std::cout << tuple[i] << ",";
+      std::cout << tuple[Dim - 1] << ")\n";
+
+      if (kd_nodes[index].LeftChildIndex >= 0) print( kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
+   }
+
    void KdtreeCUDA::print() const
    {
+      if (RootNode < 0 || Coordinates == nullptr) return;
 
+      std::vector<KdtreeNode> kd_nodes(TupleNum);
+      const int size_per_device = TupleNum / DeviceNum;
+      for (int i = 0; i < DeviceNum; ++i) {
+         setDevice( Devices[i].ID );
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               kd_nodes.data() + i * size_per_device, Devices[i].Root, sizeof( KdtreeNode ) * size_per_device,
+               cudaMemcpyDeviceToHost, Devices[i].Stream
+            )
+         );
+      }
+
+      if (DeviceNum > 1) {
+         kd_nodes[RootNode].LeftChildIndex = Devices[0].RootNode;
+         kd_nodes[RootNode].RightChildIndex = Devices[1].RootNode;
+         kd_nodes[RootNode].Index = RootNode;
+         for (int i = size_per_device; i < TupleNum; ++i) {
+            if (kd_nodes[i].LeftChildIndex >= 0) kd_nodes[i].LeftChildIndex += size_per_device;
+            if (kd_nodes[i].RightChildIndex >= 0) kd_nodes[i].RightChildIndex += size_per_device;
+            if (kd_nodes[i].Index >= 0) kd_nodes[i].Index += size_per_device;
+         }
+      }
+
+      print( kd_nodes, RootNode, 0 );
    }
 }

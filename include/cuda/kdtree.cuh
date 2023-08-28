@@ -51,6 +51,7 @@ namespace cuda
       int LeftChildIndex;
       int RightChildIndex;
 
+      KdtreeNode() : Index( -1 ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
       explicit KdtreeNode(int index) : Index( index ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
    };
 
@@ -60,7 +61,6 @@ namespace cuda
       explicit KdtreeCUDA(const node_type* vertices, int size, int dim);
       ~KdtreeCUDA();
 
-      void create(const node_type* coordinates, int size);
       void print() const;
 
    private:
@@ -105,7 +105,9 @@ namespace cuda
             NodeSums( nullptr ), MidReferences{} {}
       };
 
+      const node_type* const Coordinates;
       const int Dim;
+      int TupleNum;
       int NodeNum;
       int RootNode;
       std::vector<Device> Devices;
@@ -141,11 +143,13 @@ namespace cuda
       void fillUp(Device& device, int size) const;
       static void copyReferenceAndBuffer(Device& device, int source_index, int target_index, int size);
       static void copyReference(Device& device, int source_index, int target_index, int size);
-      void sort(std::vector<int>& end, int size);
+      void sort(std::vector<int>& end);
       void partitionDimension(Device& device, int axis, int depth) const;
       void partitionDimensionFinal(Device& device, int axis, int depth) const;
       void build();
       [[nodiscard]] int verify(Device& device, int start_axis) const;
       [[nodiscard]] int verify();
+      void create();
+      void print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;
    };
 }

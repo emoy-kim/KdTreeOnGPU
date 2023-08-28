@@ -50,7 +50,6 @@ public:
    explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
    ~Kdtree() = default;
 
-   void create(std::vector<const T*>& coordinates);
    void print() const { if (Root != nullptr) print( Root.get(), 0 ); }
    [[nodiscard]] std::list<const KdtreeNode*> search(const TVec& query, T search_radius) const
    {
@@ -88,6 +87,7 @@ private:
       return difference;
    }
    [[nodiscard]] int verify(const KdtreeNode* node, int depth) const;
+   void create(std::vector<const T*>& coordinates);
    [[nodiscard]] static bool isInside(
       const KdtreeNode* node,
       const TVec& lower,
