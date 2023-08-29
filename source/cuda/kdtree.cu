@@ -274,26 +274,26 @@ namespace cuda
 
       for (int step = 1; step < SharedSizeLimit; step <<= 1) {
          const int i = static_cast<int>(threadIdx.x) & (step - 1);
-         node_type* base_buffer = buffer + 2 * (threadIdx.x - i);
-         int* base_reference = reference + 2 * (threadIdx.x - i);
+         node_type* buffer_base = buffer + 2 * (threadIdx.x - i);
+         int* reference_base = reference + 2 * (threadIdx.x - i);
 
          __syncthreads();
-         const node_type buffer_x = base_buffer[i];
-         const int reference_x = base_reference[i];
-         const node_type buffer_y = base_buffer[i + step];
-         const int reference_y = base_reference[i + step];
+         const node_type buffer_x = buffer_base[i];
+         const int reference_x = reference_base[i];
+         const node_type buffer_y = buffer_base[i + step];
+         const int reference_y = reference_base[i + step];
          const int x = search(
-            reference_x, buffer_x, base_reference + step, base_buffer + step, coordinates, step, step, axis, dim, false
+            reference_x, buffer_x, reference_base + step, buffer_base + step, coordinates, step, step, axis, dim, false
          ) + i;
          const int y = search(
-            reference_y, buffer_y, base_reference, base_buffer, coordinates, step, step, axis, dim, true
+            reference_y, buffer_y, reference_base, buffer_base, coordinates, step, step, axis, dim, true
          ) + i;
 
          __syncthreads();
-         base_buffer[x] = buffer_x;
-         base_buffer[y] = buffer_y;
-         base_reference[x] = reference_x;
-         base_reference[y] = reference_y;
+         buffer_base[x] = buffer_x;
+         buffer_base[y] = buffer_y;
+         reference_base[x] = reference_x;
+         reference_base[y] = reference_y;
       }
 
       __syncthreads();
@@ -546,6 +546,18 @@ namespace cuda
          device.CoordinatesDevicePtr, axis, Dim
       );
       CHECK_KERNEL;
+
+      /*std::vector<node_type> data(size);
+      CHECK_CUDA(
+         cudaMemcpyAsync(
+            data.data(), in_buffer, sizeof( node_type ) * size,
+            cudaMemcpyDeviceToHost, device.Stream
+         )
+      );
+      for (int i = 0; i < block_num; ++i) {
+         const node_type* ptr = data.data() + i * SharedSizeLimit;
+         for (int j = 0; j < SharedSizeLimit - 1; ++j) assert( ptr[j] <= ptr[j + 1] );
+      }*/
 
       for (int step = SharedSizeLimit; step < size; step <<= 1) {
          const int last = size % (2 * step);
