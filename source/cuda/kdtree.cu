@@ -496,50 +496,41 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::sortPartially(
-      Device& device,
-      int source_index,
-      int target_index,
-      int size,
-      int axis
-   ) const
+   void KdtreeCUDA::sortPartially(Device& device, int size, int axis) const
    {
       assert( device.CoordinatesDevicePtr != nullptr );
-      assert( device.Reference[source_index] != nullptr && device.Reference[target_index] != nullptr );
+      assert( device.Reference[axis] != nullptr && device.Reference[Dim] != nullptr );
 
       setDevice( device.ID );
-      if (device.Buffer[source_index] == nullptr) {
+      if (device.Buffer[axis] == nullptr) {
          CHECK_CUDA(
-            cudaMalloc( reinterpret_cast<void**>(&device.Buffer[source_index]), sizeof( node_type ) * size )
+            cudaMalloc( reinterpret_cast<void**>(&device.Buffer[axis]), sizeof( node_type ) * size )
          );
          cuCopyCoordinates<<<ThreadBlockNum, ThreadNum, 0, device.Stream>>>(
-            device.Buffer[source_index], device.Reference[source_index],
+            device.Buffer[axis], device.Reference[axis],
             device.CoordinatesDevicePtr, size, axis, Dim
          );
          CHECK_KERNEL;
       }
-      if (device.Buffer[target_index] == nullptr) {
-         CHECK_CUDA(
-            cudaMalloc( reinterpret_cast<void**>(&device.Buffer[target_index]), sizeof( node_type ) * size )
-         );
+      if (device.Buffer[Dim] == nullptr) {
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Buffer[Dim]), sizeof( node_type ) * size ) );
       }
 
       int stage_num = 0;
-      for (int step = SharedSizeLimit; step < size; step <<= 1) stage_num++;
-
       int* in_reference = nullptr;
       int* out_reference = nullptr;
       node_type* in_buffer = nullptr;
       node_type* out_buffer = nullptr;
+      for (int step = SharedSizeLimit; step < size; step <<= 1) stage_num++;
       if (stage_num & 1) {
          in_buffer = device.Sort.Buffer;
          in_reference = device.Sort.Reference;
-         out_buffer = device.Buffer[target_index];
-         out_reference = device.Reference[target_index];
+         out_buffer = device.Buffer[Dim];
+         out_reference = device.Reference[Dim];
       }
       else {
-         in_buffer = device.Buffer[target_index];
-         in_reference = device.Reference[target_index];
+         in_buffer = device.Buffer[Dim];
+         in_reference = device.Reference[Dim];
          out_buffer = device.Sort.Buffer;
          out_reference = device.Sort.Reference;
       }
@@ -551,7 +542,7 @@ namespace cuda
       int thread_num = SharedSizeLimit / 2;
       cuSort<<<block_num, thread_num, 0, device.Stream>>>(
          in_reference, in_buffer,
-         device.Reference[source_index], device.Buffer[source_index],
+         device.Reference[axis], device.Buffer[axis],
          device.CoordinatesDevicePtr, axis, Dim
       );
       CHECK_KERNEL;
@@ -1290,9 +1281,9 @@ namespace cuda
          auto& d0 = Devices[0];
          auto& d1 = Devices[1];
          initializeReference( d0, size_per_device, 0 );
-         sortPartially( d0, 0, Dim, size_per_device, 0 );
+         sortPartially( d0, size_per_device, 0 );
          initializeReference( d1, size_per_device, 0 );
-         sortPartially( d1, 0, Dim, size_per_device, 0 );
+         sortPartially( d1, size_per_device, 0 );
          sync();
 
          const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
@@ -1327,12 +1318,12 @@ namespace cuda
 
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[0], 0, axis, size_per_device );
-            sortPartially( Devices[0], axis, Dim, size_per_device, axis );
+            sortPartially( Devices[0], size_per_device, axis );
             ends[0][axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[1], 0, axis, size_per_device );
-            sortPartially( Devices[1], axis, Dim, size_per_device, axis );
+            sortPartially( Devices[1], size_per_device, axis );
             ends[1][axis] = removeDuplicates( Devices[1], Dim, axis, size_per_device, axis );
          }
 
@@ -1344,7 +1335,7 @@ namespace cuda
          setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
             initializeReference( Devices[0], size_per_device, axis );
-            sortPartially( Devices[0], axis, Dim, size_per_device, axis );
+            sortPartially( Devices[0], size_per_device, axis );
             end[axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          Devices[0].TupleNum = end[0];
@@ -2181,7 +2172,7 @@ namespace cuda
          const node_type* ptr = Coordinates + i * Dim * size_per_device;
          initialize( Devices[i], ptr, size_per_device );
       }
-      cudaDeviceSynchronize();
+      CHECK_CUDA( cudaDeviceSynchronize() );
 
       auto start_time = std::chrono::system_clock::now();
       std::vector<int> end(Dim);
