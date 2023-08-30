@@ -565,23 +565,24 @@ namespace cuda
       }*/
 
       for (int sorted_size = SharedSizeLimit; sorted_size < size; sorted_size <<= 1) {
-         constexpr int thread_num = 2 * SampleStride;
-         const int remained_threads = size % (2 * sorted_size);
+         constexpr int thread_num = SampleStride * 2;
+         const int remained_threads = size % (sorted_size * 2);
          const int total_thread_num = remained_threads > sorted_size ?
-            (size - remained_threads + 2 * sorted_size) / thread_num : (size - remained_threads) / thread_num;
-         cuGenerateSampleRanks<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
+            (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
+         const int block_num = divideUp( total_thread_num, thread_num );
+         cuGenerateSampleRanks<<<block_num, thread_num, 0, device.Stream>>>(
             device.Sort.RanksA, device.Sort.RanksB,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
             sorted_size, size, axis, Dim, total_thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
+         cuMergeRanksAndIndices<<<block_num, thread_num, 0, device.Stream>>>(
             device.Sort.LimitsA, device.Sort.RanksA, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
+         cuMergeRanksAndIndices<<<block_num, thread_num, 0, device.Stream>>>(
             device.Sort.LimitsB, device.Sort.RanksB, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
