@@ -280,8 +280,8 @@ namespace cuda
       // step S/2: [0, S/2] ... [S/2-1, S-1]
       for (int step = 1; step < SharedSizeLimit; step <<= 1) {
          const int i = static_cast<int>(threadIdx.x) & (step - 1);
-         int* reference_base = reference + 2 * (threadIdx.x - i);
-         node_type* buffer_base = buffer + 2 * (threadIdx.x - i);
+         int* reference_base = reference + (threadIdx.x - i) * 2;
+         node_type* buffer_base = buffer + (threadIdx.x - i) * 2;
 
          // Merge the sorted array A, base[0] ~ base[step-1], and B, base[step] ~ base[step*2-1]
          __syncthreads();
@@ -317,7 +317,7 @@ namespace cuda
       int* reference,
       node_type* buffer,
       const node_type* coordinates,
-      int step,
+      int sorted_size,
       int size,
       int axis,
       int dim,
@@ -327,29 +327,29 @@ namespace cuda
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       if (index >= total_thread_num) return;
 
-      const int i = index & (step / SampleStride - 1);
+      const int i = index & (sorted_size / SampleStride - 1);
       const int segment_base = (index - i) * 2 * SampleStride;
       buffer += segment_base;
       reference += segment_base;
       ranks_a += segment_base / SampleStride;
       ranks_b += segment_base / SampleStride;
 
-      const int element_a = step;
-      const int element_b = min( step, size - step - segment_base );
+      const int element_a = sorted_size;
+      const int element_b = min( sorted_size, size - sorted_size - segment_base );
       const int sample_a = getSampleNum( element_a );
       const int sample_b = getSampleNum( element_b );
       if (i < sample_a) {
          ranks_a[i] = i * SampleStride;
          ranks_b[i] = search(
             reference[i * SampleStride], buffer[i * SampleStride],
-            reference + step, buffer + step, coordinates,
+            reference + sorted_size, buffer + sorted_size, coordinates,
             element_b, getNextPowerOfTwo( element_b ), axis, dim, false
          );
       }
       if (i < sample_b) {
-         ranks_b[step / SampleStride + i] = i * SampleStride;
-         ranks_a[step / SampleStride + i] = search(
-            reference[i * SampleStride + step], buffer[i * SampleStride + step],
+         ranks_b[sorted_size / SampleStride + i] = i * SampleStride;
+         ranks_a[sorted_size / SampleStride + i] = search(
+            reference[i * SampleStride + sorted_size], buffer[i * SampleStride + sorted_size],
             reference, buffer, coordinates,
             element_a, getNextPowerOfTwo( element_a ), axis, dim, true
          );
