@@ -250,7 +250,7 @@ namespace cuda
    }
 
    __global__
-   void cuSort(
+   void cuSortByBlock(
       int* target_reference,
       node_type* target_buffer,
       const int* source_reference,
@@ -321,11 +321,11 @@ namespace cuda
       int size,
       int axis,
       int dim,
-      int thread_num
+      int total_thread_num
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      if (index >= thread_num) return;
+      if (index >= total_thread_num) return;
 
       const int i = index & (step / SampleStride - 1);
       const int segment_base = (index - i) * 2 * SampleStride;
@@ -357,10 +357,10 @@ namespace cuda
    }
 
    __global__
-   void cuMergeRanksAndIndices(int* limits, const int* ranks, int step, int size, int thread_num)
+   void cuMergeRanksAndIndices(int* limits, const int* ranks, int step, int size, int total_thread_num)
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      if (index >= thread_num) return;
+      if (index >= total_thread_num) return;
 
       const int i = index & (step / SampleStride - 1);
       const int segment_base = (index - i) * 2 * SampleStride;
@@ -503,7 +503,7 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::sortPartially(Device& device, int size, int axis) const
+   void KdtreeCUDA::sortByAxis(Device& device, int size, int axis) const
    {
       assert( device.CoordinatesDevicePtr != nullptr );
       assert( device.Reference[axis] != nullptr && device.Reference[Dim] != nullptr );
@@ -545,9 +545,7 @@ namespace cuda
       assert( size <= SampleStride * device.Sort.MaxSampleNum );
       assert( size % SharedSizeLimit == 0 );
 
-      const int block_num = size / SharedSizeLimit;
-      int thread_num = SharedSizeLimit / 2;
-      cuSort<<<block_num, thread_num, 0, device.Stream>>>(
+      cuSortByBlock<<<size / SharedSizeLimit, SharedSizeLimit / 2, 0, device.Stream>>>(
          in_reference, in_buffer,
          device.Reference[axis], device.Buffer[axis],
          device.CoordinatesDevicePtr, axis, Dim
@@ -566,46 +564,49 @@ namespace cuda
          for (int j = 0; j < SharedSizeLimit - 1; ++j) assert( ptr[j] <= ptr[j + 1] );
       }*/
 
-      for (int step = SharedSizeLimit; step < size; step <<= 1) {
-         const int last = size % (2 * step);
-         thread_num = last > step ? (size + 2 * step - last) / (2 * SampleStride) : (size - last) / (2 * SampleStride);
-         cuGenerateSampleRanks<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
+      for (int sorted_size = SharedSizeLimit; sorted_size < size; sorted_size <<= 1) {
+         constexpr int thread_num = 2 * SampleStride;
+         const int remained_threads = size % (2 * sorted_size);
+         const int total_thread_num = remained_threads > sorted_size ?
+            (size - remained_threads + 2 * sorted_size) / thread_num : (size - remained_threads) / thread_num;
+         cuGenerateSampleRanks<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
             device.Sort.RanksA, device.Sort.RanksB,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
-            step, size, axis, Dim, thread_num
+            sorted_size, size, axis, Dim, total_thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
-            device.Sort.LimitsA, device.Sort.RanksA, step, size, thread_num
+         cuMergeRanksAndIndices<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
+            device.Sort.LimitsA, device.Sort.RanksA, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
 
-         cuMergeRanksAndIndices<<<divideUp( thread_num, 256 ), 256, 0, device.Stream>>>(
-            device.Sort.LimitsB, device.Sort.RanksB, step, size, thread_num
+         cuMergeRanksAndIndices<<<divideUp( total_thread_num, thread_num ), thread_num, 0, device.Stream>>>(
+            device.Sort.LimitsB, device.Sort.RanksB, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
 
-         const int merge_pairs = last > step ? getSampleNum( size ) : (size - last) / SampleStride;
+         const int merge_pairs = remained_threads > sorted_size ?
+            getSampleNum( size ) : (size - remained_threads) / SampleStride;
          cuMergeReferences<<<merge_pairs, SampleStride, 0, device.Stream>>>(
             out_reference, out_buffer,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
             device.Sort.LimitsA, device.Sort.LimitsB,
-            step, size, axis, Dim
+            sorted_size, size, axis, Dim
          );
          CHECK_KERNEL;
 
-         if (last <= step) {
+         if (remained_threads <= sorted_size) {
             CHECK_CUDA(
                cudaMemcpyAsync(
-                  out_reference + size - last, in_reference + size - last, sizeof( int ) * last,
-                  cudaMemcpyDeviceToDevice, device.Stream
+                  out_reference + size - remained_threads, in_reference + size - remained_threads,
+                  sizeof( int ) * remained_threads, cudaMemcpyDeviceToDevice, device.Stream
                )
             );
             CHECK_CUDA(
                cudaMemcpyAsync(
-                  out_buffer + size - last, in_buffer + size - last, sizeof( node_type ) * last,
-                  cudaMemcpyDeviceToDevice, device.Stream
+                  out_buffer + size - remained_threads, in_buffer + size - remained_threads,
+                  sizeof( node_type ) * remained_threads, cudaMemcpyDeviceToDevice, device.Stream
                )
             );
          }
@@ -1300,9 +1301,9 @@ namespace cuda
          auto& d0 = Devices[0];
          auto& d1 = Devices[1];
          initializeReference( d0, size_per_device, 0 );
-         sortPartially( d0, size_per_device, 0 );
+         sortByAxis( d0, size_per_device, 0 );
          initializeReference( d1, size_per_device, 0 );
-         sortPartially( d1, size_per_device, 0 );
+         sortByAxis( d1, size_per_device, 0 );
          sync();
 
          const int pivot = swapBalanced( Dim, 0, size_per_device, 0 );
@@ -1337,12 +1338,12 @@ namespace cuda
 
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[0], 0, axis, size_per_device );
-            sortPartially( Devices[0], size_per_device, axis );
+            sortByAxis( Devices[0], size_per_device, axis );
             ends[0][axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          for (int axis = 1; axis < Dim; ++axis) {
             copyReference( Devices[1], 0, axis, size_per_device );
-            sortPartially( Devices[1], size_per_device, axis );
+            sortByAxis( Devices[1], size_per_device, axis );
             ends[1][axis] = removeDuplicates( Devices[1], Dim, axis, size_per_device, axis );
          }
 
@@ -1354,7 +1355,7 @@ namespace cuda
          setDevice( Devices[0].ID );
          for (int axis = 0; axis < Dim; ++axis) {
             initializeReference( Devices[0], size_per_device, axis );
-            sortPartially( Devices[0], size_per_device, axis );
+            sortByAxis( Devices[0], size_per_device, axis );
             end[axis] = removeDuplicates( Devices[0], Dim, axis, size_per_device, axis );
          }
          Devices[0].TupleNum = end[0];
