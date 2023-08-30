@@ -272,16 +272,23 @@ namespace cuda
       buffer[threadIdx.x + SharedSizeLimit / 2] = source_buffer[SharedSizeLimit / 2];
       reference[threadIdx.x + SharedSizeLimit / 2] = source_reference[SharedSizeLimit / 2];
 
+      // Given S = SharedSizeLimit, for all threads, [base[i], base[i+step]] is
+      // step 1: [0, 1] ... [S-2, S-1]
+      // step 2: [0, 2] [1, 3] ... [S-4, S-2], [S-3, S-1]
+      // step 4: [0, 4] [1, 5] [2, 6] [3, 7] ... [S-8, S-4] [S-7, S-3] [S-6, S-2] [S-5, S-1]
+      //   ...
+      // step S/2: [0, S/2] ... [S/2-1, S-1]
       for (int step = 1; step < SharedSizeLimit; step <<= 1) {
          const int i = static_cast<int>(threadIdx.x) & (step - 1);
-         node_type* buffer_base = buffer + 2 * (threadIdx.x - i);
          int* reference_base = reference + 2 * (threadIdx.x - i);
+         node_type* buffer_base = buffer + 2 * (threadIdx.x - i);
 
+         // Merge the sorted array A, base[0] ~ base[step-1], and B, base[step] ~ base[step*2-1]
          __syncthreads();
-         const node_type buffer_x = buffer_base[i];
          const int reference_x = reference_base[i];
-         const node_type buffer_y = buffer_base[i + step];
+         const node_type buffer_x = buffer_base[i];
          const int reference_y = reference_base[i + step];
+         const node_type buffer_y = buffer_base[i + step];
          const int x = search(
             reference_x, buffer_x, reference_base + step, buffer_base + step, coordinates, step, step, axis, dim, false
          ) + i;
