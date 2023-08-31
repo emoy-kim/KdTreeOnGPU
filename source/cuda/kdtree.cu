@@ -10,7 +10,7 @@ namespace cuda
    }
 
    __host__ __device__
-   int getSampleNum(int x)
+   inline int getSampleNum(int x)
    {
       return divideUp( x, SampleStride );
    }
@@ -18,15 +18,6 @@ namespace cuda
    __device__
    static inline int getNextPowerOfTwo(int x)
    {
-      /*
-         --x;
-         x |= x >> 1;
-         x |= x >> 2;
-         x |= x >> 4;
-         x |= x >> 8;
-         x |= x >> 16;
-         return ++x;
-       */
       constexpr int bits = sizeof( int ) * 8;
       return 1 << (bits - __clz( x - 1 ));
    }
@@ -328,14 +319,14 @@ namespace cuda
       if (index >= total_thread_num) return;
 
       const int i = index & (sorted_size / SampleStride - 1);
-      const int segment_base = (index - i) * 2 * SampleStride;
+      const int segment_base = (index - i) * SampleStride * 2;
       buffer += segment_base;
       reference += segment_base;
       ranks_a += segment_base / SampleStride;
       ranks_b += segment_base / SampleStride;
 
       const int element_a = sorted_size;
-      const int element_b = min( sorted_size, size - sorted_size - segment_base );
+      const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
       const int sample_a = getSampleNum( element_a );
       const int sample_b = getSampleNum( element_b );
       if (i < sample_a) {
