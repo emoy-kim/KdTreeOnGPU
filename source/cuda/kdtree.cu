@@ -322,14 +322,14 @@ namespace cuda
       const int segment_base = (index - i) * SampleStride * 2;
       buffer += segment_base;
       reference += segment_base;
-      ranks_a += segment_base / SampleStride;
-      ranks_b += segment_base / SampleStride;
+      ranks_a += (index - i) * 2;
+      ranks_b += (index - i) * 2;
 
       const int element_a = sorted_size;
       const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
-      const int sample_a = getSampleNum( element_a );
-      const int sample_b = getSampleNum( element_b );
-      if (i < sample_a) {
+      const int sample_num_a = getSampleNum( element_a );
+      const int sample_num_b = getSampleNum( element_b );
+      if (i < sample_num_a) {
          ranks_a[i] = i * SampleStride;
          ranks_b[i] = search(
             reference[i * SampleStride], buffer[i * SampleStride],
@@ -337,7 +337,7 @@ namespace cuda
             element_b, getNextPowerOfTwo( element_b ), axis, dim, false
          );
       }
-      if (i < sample_b) {
+      if (i < sample_num_b) {
          ranks_b[sorted_size / SampleStride + i] = i * SampleStride;
          ranks_a[sorted_size / SampleStride + i] = search(
             reference[i * SampleStride + sorted_size], buffer[i * SampleStride + sorted_size],
@@ -348,39 +348,39 @@ namespace cuda
    }
 
    __global__
-   void cuMergeRanksAndIndices(int* limits, const int* ranks, int step, int size, int total_thread_num)
+   void cuMergeRanksAndIndices(int* limits, const int* ranks, int sorted_size, int size, int total_thread_num)
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       if (index >= total_thread_num) return;
 
-      const int i = index & (step / SampleStride - 1);
-      const int segment_base = (index - i) * 2 * SampleStride;
+      const int i = index & (sorted_size / SampleStride - 1);
+      const int segment_base = (index - i) * SampleStride * 2;
       ranks += (index - i) * 2;
       limits += (index - i) * 2;
 
-      const int element_a = step;
-      const int element_b = min( step, size - step - segment_base );
-      const int sample_a = getSampleNum( element_a );
-      const int sample_b = getSampleNum( element_b );
-      if (i < sample_a) {
+      const int element_a = sorted_size;
+      const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
+      const int sample_num_a = getSampleNum( element_a );
+      const int sample_num_b = getSampleNum( element_b );
+      if (i < sample_num_a) {
          int x = 0;
-         if (sample_b != 0) {
-            for (int s = getNextPowerOfTwo( sample_b ); s > 0; s >>= 1) {
-               const int j = min( x + s, sample_b );
-               if (ranks[sample_a + j - 1] < ranks[i]) x = j;
+         if (sample_num_b > 0) {
+            for (int s = getNextPowerOfTwo( sample_num_b ); s > 0; s >>= 1) {
+               const int j = min( x + s, sample_num_b );
+               if (ranks[sample_num_a + j - 1] < ranks[i]) x = j;
             }
          }
          limits[x + i] = ranks[i];
       }
-      if (i < sample_b) {
+      if (i < sample_num_b) {
          int x = 0;
-         if (sample_a != 0) {
-            for (int s = getNextPowerOfTwo( sample_a ); s > 0; s >>= 1) {
-               const int j = min( x + s, sample_a );
-               if (ranks[j - 1] <= ranks[sample_a + i]) x = j;
+         if (sample_num_a > 0) {
+            for (int s = getNextPowerOfTwo( sample_num_a ); s > 0; s >>= 1) {
+               const int j = min( x + s, sample_num_a );
+               if (ranks[j - 1] <= ranks[sample_num_a + i]) x = j;
             }
          }
-         limits[x + i] = ranks[sample_a + i];
+         limits[x + i] = ranks[sample_num_a + i];
       }
    }
 
@@ -435,35 +435,33 @@ namespace cuda
       const node_type* coordinates,
       const int* limits_a,
       const int* limits_b,
-      int step,
+      int sorted_size,
       int size,
       int axis,
       int dim
    )
    {
-      const int index = static_cast<int>(blockIdx.x) & (2 * step / SampleStride - 1);
-      const int segment_base = (static_cast<int>(blockIdx.x) - index) * SampleStride;
+      const int i = static_cast<int>(blockIdx.x) & (sorted_size * 2 / SampleStride - 1);
+      const int segment_base = (static_cast<int>(blockIdx.x) - i) * SampleStride;
       target_buffer += segment_base;
       target_reference += segment_base;
       source_buffer += segment_base;
       source_reference += segment_base;
 
-      __shared__ int reference[2 * SampleStride];
-      __shared__ node_type buffer[2 * SampleStride];
+      __shared__ int reference[SampleStride * 2];
+      __shared__ node_type buffer[SampleStride * 2];
       __shared__ int start_source_a, start_source_b;
       __shared__ int start_target_a, start_target_b;
       __shared__ int length_a, length_b;
 
       if (threadIdx.x == 0) {
-         const int element_a = step;
-         const int element_b = min( step, size - step - segment_base );
-         const int sample_a = getSampleNum( element_a );
-         const int sample_b = getSampleNum( element_b );
-         const int sample_num = sample_a + sample_b;
+         const int element_a = sorted_size;
+         const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
+         const int sample_num = getSampleNum( element_a ) + getSampleNum( element_b );
          start_source_a = limits_a[blockIdx.x];
          start_source_b = limits_b[blockIdx.x];
-         const int end_source_a = index + 1 < sample_num ? limits_a[blockIdx.x + 1] : element_a;
-         const int end_source_b = index + 1 < sample_num ? limits_b[blockIdx.x + 1] : element_b;
+         const int end_source_a = i + 1 < sample_num ? limits_a[blockIdx.x + 1] : element_a;
+         const int end_source_b = i + 1 < sample_num ? limits_b[blockIdx.x + 1] : element_b;
          length_a = end_source_a - start_source_a;
          length_b = end_source_b - start_source_b;
          start_target_a = start_source_a + start_source_b;
@@ -476,8 +474,8 @@ namespace cuda
          reference[threadIdx.x] = source_reference[start_source_a + threadIdx.x];
       }
       if (threadIdx.x < length_b) {
-         buffer[threadIdx.x + SampleStride] = source_buffer[start_source_b + threadIdx.x + step];
-         reference[threadIdx.x + SampleStride] = source_reference[start_source_b + threadIdx.x + step];
+         buffer[threadIdx.x + SampleStride] = source_buffer[start_source_b + threadIdx.x + sorted_size];
+         reference[threadIdx.x + SampleStride] = source_reference[start_source_b + threadIdx.x + sorted_size];
       }
 
       __syncthreads();
