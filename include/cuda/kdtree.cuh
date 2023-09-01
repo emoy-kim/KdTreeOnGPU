@@ -70,17 +70,17 @@ namespace cuda
       struct SortGPU
       {
          int MaxSampleNum;
-         int* RanksA;
-         int* RanksB;
-         int* LimitsA;
-         int* LimitsB;
+         int* LeftRanks;
+         int* RightRanks;
+         int* LeftLimits;
+         int* RightLimits;
          int* MergePath;
          int* Reference;
          node_type* Buffer;
 
          SortGPU() :
-            MaxSampleNum( 0 ), RanksA( nullptr ), RanksB( nullptr ), LimitsA( nullptr ), LimitsB( nullptr ),
-            MergePath( nullptr ), Reference( nullptr ), Buffer( nullptr ) {}
+            MaxSampleNum( 0 ), LeftRanks( nullptr ), RightRanks( nullptr ), LeftLimits( nullptr ),
+            RightLimits( nullptr ), MergePath( nullptr ), Reference( nullptr ), Buffer( nullptr ) {}
       };
 
       struct Device

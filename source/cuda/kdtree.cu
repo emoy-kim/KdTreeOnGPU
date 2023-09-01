@@ -228,6 +228,10 @@ namespace cuda
    {
       if (length == 0) return 0;
 
+      // Find the right place to put v among buffer in ascending order.
+      // When it is inclusive, the place will be the rightmost among the same values with v.
+      // When it is exclusive, the place will be the leftmost among the same values with v.
+      // Local variable i points the index to put v, which means the number of values less than (or equal to) v.
       int i = 0;
       while (step > 0) {
          const int j = min( i + step, length );
@@ -303,8 +307,8 @@ namespace cuda
 
    __global__
    void cuGenerateSampleRanks(
-      int* ranks_a,
-      int* ranks_b,
+      int* left_ranks,
+      int* right_ranks,
       int* reference,
       node_type* buffer,
       const node_type* coordinates,
@@ -322,27 +326,27 @@ namespace cuda
       const int segment_base = (index - i) * SampleStride * 2;
       buffer += segment_base;
       reference += segment_base;
-      ranks_a += (index - i) * 2;
-      ranks_b += (index - i) * 2;
+      left_ranks += (index - i) * 2;
+      right_ranks += (index - i) * 2;
 
-      const int element_a = sorted_size;
-      const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
-      const int sample_num_a = getSampleNum( element_a );
-      const int sample_num_b = getSampleNum( element_b );
-      if (i < sample_num_a) {
-         ranks_a[i] = i * SampleStride;
-         ranks_b[i] = search(
+      const int left_elements = sorted_size;
+      const int right_elements = min( sorted_size, size - (segment_base + sorted_size) );
+      const int left_sample_num = getSampleNum( left_elements );
+      const int right_sample_num = getSampleNum( right_elements );
+      if (i < left_sample_num) {
+         left_ranks[i] = i * SampleStride;
+         right_ranks[i] = search(
             reference[i * SampleStride], buffer[i * SampleStride],
             reference + sorted_size, buffer + sorted_size, coordinates,
-            element_b, getNextPowerOfTwo( element_b ), axis, dim, false
+            right_elements, getNextPowerOfTwo( right_elements ), axis, dim, false
          );
       }
-      if (i < sample_num_b) {
-         ranks_b[sorted_size / SampleStride + i] = i * SampleStride;
-         ranks_a[sorted_size / SampleStride + i] = search(
-            reference[i * SampleStride + sorted_size], buffer[i * SampleStride + sorted_size],
+      if (i < right_sample_num) {
+         right_ranks[sorted_size / SampleStride + i] = i * SampleStride;
+         left_ranks[sorted_size / SampleStride + i] = search(
+            reference[sorted_size + i * SampleStride], buffer[sorted_size + i * SampleStride],
             reference, buffer, coordinates,
-            element_a, getNextPowerOfTwo( element_a ), axis, dim, true
+            left_elements, getNextPowerOfTwo( left_elements ), axis, dim, true
          );
       }
    }
@@ -358,29 +362,29 @@ namespace cuda
       ranks += (index - i) * 2;
       limits += (index - i) * 2;
 
-      const int element_a = sorted_size;
-      const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
-      const int sample_num_a = getSampleNum( element_a );
-      const int sample_num_b = getSampleNum( element_b );
-      if (i < sample_num_a) {
+      const int left_elements = sorted_size;
+      const int right_elements = min( sorted_size, size - (segment_base + sorted_size) );
+      const int left_sample_num = getSampleNum( left_elements );
+      const int right_sample_num = getSampleNum( right_elements );
+      if (i < left_sample_num) {
          int x = 0;
-         if (sample_num_b > 0) {
-            for (int s = getNextPowerOfTwo( sample_num_b ); s > 0; s >>= 1) {
-               const int j = min( x + s, sample_num_b );
-               if (ranks[sample_num_a + j - 1] < ranks[i]) x = j;
+         if (right_sample_num > 0) {
+            for (int s = getNextPowerOfTwo( right_sample_num ); s > 0; s >>= 1) {
+               const int j = min( x + s, right_sample_num );
+               if (ranks[left_sample_num + j - 1] < ranks[i]) x = j;
             }
          }
          limits[x + i] = ranks[i];
       }
-      if (i < sample_num_b) {
+      if (i < right_sample_num) {
          int x = 0;
-         if (sample_num_a > 0) {
-            for (int s = getNextPowerOfTwo( sample_num_a ); s > 0; s >>= 1) {
-               const int j = min( x + s, sample_num_a );
-               if (ranks[j - 1] <= ranks[sample_num_a + i]) x = j;
+         if (left_sample_num > 0) {
+            for (int s = getNextPowerOfTwo( left_sample_num ); s > 0; s >>= 1) {
+               const int j = min( x + s, left_sample_num );
+               if (ranks[j - 1] <= ranks[left_sample_num + i]) x = j;
             }
          }
-         limits[x + i] = ranks[sample_num_a + i];
+         limits[x + i] = ranks[left_sample_num + i];
       }
    }
 
@@ -437,8 +441,8 @@ namespace cuda
       const int* source_reference,
       const node_type* source_buffer,
       const node_type* coordinates,
-      const int* limits_a,
-      const int* limits_b,
+      const int* left_limits,
+      const int* right_limits,
       int sorted_size,
       int size,
       int axis,
@@ -462,10 +466,10 @@ namespace cuda
          const int left_elements = sorted_size;
          const int right_elements = min( sorted_size, size - (segment_base + sorted_size) );
          const int sample_num = getSampleNum( left_elements ) + getSampleNum( right_elements );
-         const int left_end_source = i < sample_num - 1 ? limits_a[blockIdx.x + 1] : left_elements;
-         const int right_end_source = i < sample_num - 1 ? limits_b[blockIdx.x + 1] : right_elements;
-         left_start_source = limits_a[blockIdx.x];
-         right_start_source = limits_b[blockIdx.x];
+         const int left_end_source = i < sample_num - 1 ? left_limits[blockIdx.x + 1] : left_elements;
+         const int right_end_source = i < sample_num - 1 ? right_limits[blockIdx.x + 1] : right_elements;
+         left_start_source = left_limits[blockIdx.x];
+         right_start_source = right_limits[blockIdx.x];
          left_length = left_end_source - left_start_source;
          right_length = right_end_source - right_start_source;
          left_start_target = left_start_source + right_start_source;
@@ -564,19 +568,19 @@ namespace cuda
             (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
          const int block_num = divideUp( total_thread_num, thread_num );
          cuGenerateSampleRanks<<<block_num, thread_num, 0, device.Stream>>>(
-            device.Sort.RanksA, device.Sort.RanksB,
+            device.Sort.LeftRanks, device.Sort.RightRanks,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
             sorted_size, size, axis, Dim, total_thread_num
          );
          CHECK_KERNEL;
 
          cuMergeRanksAndIndices<<<block_num, thread_num, 0, device.Stream>>>(
-            device.Sort.LimitsA, device.Sort.RanksA, sorted_size, size, total_thread_num
+            device.Sort.LeftLimits, device.Sort.LeftRanks, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
 
          cuMergeRanksAndIndices<<<block_num, thread_num, 0, device.Stream>>>(
-            device.Sort.LimitsB, device.Sort.RanksB, sorted_size, size, total_thread_num
+            device.Sort.RightLimits, device.Sort.RightRanks, sorted_size, size, total_thread_num
          );
          CHECK_KERNEL;
 
@@ -585,7 +589,7 @@ namespace cuda
          cuMergeReferences<<<merge_pairs, SampleStride, 0, device.Stream>>>(
             out_reference, out_buffer,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
-            device.Sort.LimitsA, device.Sort.LimitsB,
+            device.Sort.LeftLimits, device.Sort.RightLimits,
             sorted_size, size, axis, Dim
          );
          CHECK_KERNEL;
@@ -1282,10 +1286,10 @@ namespace cuda
       for (auto& device : Devices) {
          setDevice( device.ID );
          device.Sort.MaxSampleNum = max_sample_num;
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RanksA), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RanksB), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsA), sizeof( int ) * max_sample_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LimitsB), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LeftRanks), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RightRanks), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.LeftLimits), sizeof( int ) * max_sample_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.RightLimits), sizeof( int ) * max_sample_num ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Reference), sizeof( int ) * TupleNum ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.Sort.Buffer), sizeof( node_type ) * TupleNum ) );
       }
@@ -1359,10 +1363,10 @@ namespace cuda
       for (auto& device : Devices) {
          setDevice( device.ID );
          CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
-         CHECK_CUDA( cudaFree( device.Sort.RanksA ) );
-         CHECK_CUDA( cudaFree( device.Sort.RanksB ) );
-         CHECK_CUDA( cudaFree( device.Sort.LimitsA ) );
-         CHECK_CUDA( cudaFree( device.Sort.LimitsB ) );
+         CHECK_CUDA( cudaFree( device.Sort.LeftRanks ) );
+         CHECK_CUDA( cudaFree( device.Sort.RightRanks ) );
+         CHECK_CUDA( cudaFree( device.Sort.LeftLimits ) );
+         CHECK_CUDA( cudaFree( device.Sort.RightLimits ) );
          CHECK_CUDA( cudaFree( device.Sort.Reference ) );
          CHECK_CUDA( cudaFree( device.Sort.Buffer ) );
          if (device.Sort.MergePath != nullptr) CHECK_CUDA( cudaFree( device.Sort.MergePath ) );
