@@ -389,40 +389,44 @@ namespace cuda
       int* reference,
       node_type* buffer,
       const node_type* coordinates,
-      int length_a,
-      int length_b,
+      int left_length,
+      int right_length,
       int axis,
       int dim
    )
    {
-      const int* reference_a = reference;
-      const int* reference_b = reference + SampleStride;
-      const node_type* buffer_a = buffer;
-      const node_type* buffer_b = buffer + SampleStride;
+      const int* left_reference = reference;
+      const int* right_reference = reference + SampleStride;
+      const node_type* left_buffer = buffer;
+      const node_type* right_buffer = buffer + SampleStride;
 
-      int index_a, index_b, x, y;
-      node_type value_a, value_b;
-      if (threadIdx.x < length_a) {
-         value_a = buffer_a[threadIdx.x];
-         index_a = reference_a[threadIdx.x];
-         x = static_cast<int>(threadIdx.x) +
-            search( index_a, value_a, reference_b, buffer_b, coordinates, length_b, SampleStride, axis, dim, false );
+      int left_index, right_index, x, y;
+      node_type left_value, right_value;
+      if (threadIdx.x < left_length) {
+         left_value = left_buffer[threadIdx.x];
+         left_index = left_reference[threadIdx.x];
+         x = static_cast<int>(threadIdx.x) + search(
+            left_index, left_value, right_reference, right_buffer,
+            coordinates, right_length, SampleStride, axis, dim, false
+         );
       }
-      if (threadIdx.x < length_b) {
-         value_b = buffer_b[threadIdx.x];
-         index_b = reference_b[threadIdx.x];
-         y = static_cast<int>(threadIdx.x) +
-            search( index_b, value_b, reference_a, buffer_a, coordinates, length_a, SampleStride, axis, dim, true );
+      if (threadIdx.x < right_length) {
+         right_value = right_buffer[threadIdx.x];
+         right_index = right_reference[threadIdx.x];
+         y = static_cast<int>(threadIdx.x) + search(
+            right_index, right_value, left_reference, left_buffer,
+            coordinates, left_length, SampleStride, axis, dim, true
+         );
       }
 
       __syncthreads();
-      if (threadIdx.x < length_a) {
-         buffer[x] = value_a;
-         reference[x] = index_a;
+      if (threadIdx.x < left_length) {
+         buffer[x] = left_value;
+         reference[x] = left_index;
       }
-      if (threadIdx.x < length_b) {
-         buffer[y] = value_b;
-         reference[y] = index_b;
+      if (threadIdx.x < right_length) {
+         buffer[y] = right_value;
+         reference[y] = right_index;
       }
    }
 
@@ -450,45 +454,45 @@ namespace cuda
 
       __shared__ int reference[SampleStride * 2];
       __shared__ node_type buffer[SampleStride * 2];
-      __shared__ int start_source_a, start_source_b;
-      __shared__ int start_target_a, start_target_b;
-      __shared__ int length_a, length_b;
+      __shared__ int left_start_source, right_start_source;
+      __shared__ int left_start_target, right_start_target;
+      __shared__ int left_length, right_length;
 
       if (threadIdx.x == 0) {
-         const int element_a = sorted_size;
-         const int element_b = min( sorted_size, size - (segment_base + sorted_size) );
-         const int sample_num = getSampleNum( element_a ) + getSampleNum( element_b );
-         start_source_a = limits_a[blockIdx.x];
-         start_source_b = limits_b[blockIdx.x];
-         const int end_source_a = i + 1 < sample_num ? limits_a[blockIdx.x + 1] : element_a;
-         const int end_source_b = i + 1 < sample_num ? limits_b[blockIdx.x + 1] : element_b;
-         length_a = end_source_a - start_source_a;
-         length_b = end_source_b - start_source_b;
-         start_target_a = start_source_a + start_source_b;
-         start_target_b = start_target_a + length_a;
+         const int left_elements = sorted_size;
+         const int right_elements = min( sorted_size, size - (segment_base + sorted_size) );
+         const int sample_num = getSampleNum( left_elements ) + getSampleNum( right_elements );
+         const int left_end_source = i < sample_num - 1 ? limits_a[blockIdx.x + 1] : left_elements;
+         const int right_end_source = i < sample_num - 1 ? limits_b[blockIdx.x + 1] : right_elements;
+         left_start_source = limits_a[blockIdx.x];
+         right_start_source = limits_b[blockIdx.x];
+         left_length = left_end_source - left_start_source;
+         right_length = right_end_source - right_start_source;
+         left_start_target = left_start_source + right_start_source;
+         right_start_target = left_start_target + left_length;
       }
       __syncthreads();
 
-      if (threadIdx.x < length_a) {
-         buffer[threadIdx.x] = source_buffer[start_source_a + threadIdx.x];
-         reference[threadIdx.x] = source_reference[start_source_a + threadIdx.x];
+      if (threadIdx.x < left_length) {
+         buffer[threadIdx.x] = source_buffer[left_start_source + threadIdx.x];
+         reference[threadIdx.x] = source_reference[left_start_source + threadIdx.x];
       }
-      if (threadIdx.x < length_b) {
-         buffer[threadIdx.x + SampleStride] = source_buffer[start_source_b + threadIdx.x + sorted_size];
-         reference[threadIdx.x + SampleStride] = source_reference[start_source_b + threadIdx.x + sorted_size];
+      if (threadIdx.x < right_length) {
+         buffer[SampleStride + threadIdx.x] = source_buffer[sorted_size + right_start_source + threadIdx.x];
+         reference[SampleStride + threadIdx.x] = source_reference[sorted_size + right_start_source + threadIdx.x];
       }
-
       __syncthreads();
-      merge( reference, buffer, coordinates, length_a, length_b, axis, dim );
 
+      merge( reference, buffer, coordinates, left_length, right_length, axis, dim );
       __syncthreads();
-      if (threadIdx.x < length_a) {
-         target_buffer[start_target_a + threadIdx.x] = buffer[threadIdx.x];
-         target_reference[start_target_a + threadIdx.x] = reference[threadIdx.x];
+
+      if (threadIdx.x < left_length) {
+         target_buffer[left_start_target + threadIdx.x] = buffer[threadIdx.x];
+         target_reference[left_start_target + threadIdx.x] = reference[threadIdx.x];
       }
-      if (threadIdx.x < length_b) {
-         target_buffer[start_target_b + threadIdx.x] = buffer[length_a + threadIdx.x];
-         target_reference[start_target_b + threadIdx.x] = reference[length_a + threadIdx.x];
+      if (threadIdx.x < right_length) {
+         target_buffer[right_start_target + threadIdx.x] = buffer[left_length + threadIdx.x];
+         target_reference[right_start_target + threadIdx.x] = reference[left_length + threadIdx.x];
       }
    }
 
