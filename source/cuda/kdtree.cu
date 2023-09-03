@@ -311,7 +311,7 @@ namespace cuda
    }
 
    __global__
-   void cuSortFinal(
+   void cuSortLastBlock(
       int* target_reference,
       node_type* target_buffer,
       const int* source_reference,
@@ -590,8 +590,7 @@ namespace cuda
       if (block_num > 0) {
          cuSortByBlock<<<size / SharedSizeLimit, SharedSizeLimit / 2, 0, device.Stream>>>(
             in_reference, in_buffer,
-            device.Reference[axis], device.Buffer[axis],
-            device.CoordinatesDevicePtr, size, axis, Dim
+            device.Reference[axis], device.Buffer[axis], device.CoordinatesDevicePtr, size, axis, Dim
          );
          CHECK_KERNEL;
       }
@@ -602,7 +601,7 @@ namespace cuda
          const std::array<node_type*, 2> buffers{ device.Buffer[axis] + start_offset, in_buffer + start_offset };
          const std::array<int*, 2> references{ device.Reference[axis] + start_offset, in_reference + start_offset };
          for (int sorted_size = 1; sorted_size < remained_size; sorted_size <<= 1) {
-            cuSortFinal<<<1, divideUp( remained_size, sorted_size * 2 ), 0, device.Stream>>>(
+            cuSortLastBlock<<<1, divideUp( remained_size, sorted_size * 2 ), 0, device.Stream>>>(
                references[buffer_index ^ 1], buffers[buffer_index ^ 1],
                references[buffer_index], buffers[buffer_index], device.CoordinatesDevicePtr,
                sorted_size, remained_size, axis, Dim
