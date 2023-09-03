@@ -664,7 +664,6 @@ namespace cuda
       }
    }
 
-   // reference: Comparison Based Sorting for Systems with Multiple GPUs, 2013
    __device__ int selected_pivot;
 
    __global__
@@ -984,7 +983,7 @@ namespace cuda
       const node_type* coordinates,
       const int* other_reference,
       const node_type* other_coordinates,
-      int segment_size,
+      int segment_size_per_warp,
       int size,
       int axis,
       int dim
@@ -992,10 +991,10 @@ namespace cuda
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const int thread_index = index & (warpSize - 1);
-      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int warps_per_block = warpSize / 2;
       const int warp_index = (index - thread_index) / warpSize;
-      const int start_segment = warp_index * segment_size;
-      if (start_segment + segment_size > size) segment_size = size - start_segment;
+      const int start_segment = warp_index * segment_size_per_warp;
+      if (start_segment + segment_size_per_warp > size) segment_size_per_warp = size - start_segment;
 
       __shared__ int reference[SharedSizeLimit];
       __shared__ node_type buffer[SharedSizeLimit];
@@ -1004,15 +1003,15 @@ namespace cuda
       node_type* out_buffer = target_buffer + start_segment;
       const int* in_reference = source_reference + start_segment;
       const node_type* in_buffer = source_buffer + start_segment;
-      const int shared_base = 2 * warpSize * (warp_index % warps_per_block);
-      const int shared_address_mask = 2 * warpSize - 1;
+      const int shared_base = warpSize * 2 *  (warp_index % warps_per_block);
+      const int shared_address_mask = warpSize * 2 - 1;
       const int mask = (1 << thread_index) - 1;
 
       node_type t, v;
       int i, r, count = 0;
       int shuffle_mask = 0;
-      for (i = 0; i < segment_size && shuffle_mask == 0; i += warpSize) {
-         if (thread_index < segment_size) {
+      for (i = 0; i < segment_size_per_warp && shuffle_mask == 0; i += warpSize) {
+         if (thread_index < segment_size_per_warp) {
             buffer[shared_base + thread_index] = v = in_buffer[thread_index];
             reference[shared_base + thread_index] = r = in_reference[thread_index];
             if (thread_index != 0) {
@@ -1064,8 +1063,8 @@ namespace cuda
             reference[shared_base + (old_count & warpSize) + thread_index];
       }
 
-      for (; i < segment_size; i += warpSize) {
-         if (i + thread_index < segment_size) {
+      for (; i < segment_size_per_warp; i += warpSize) {
+         if (i + thread_index < segment_size_per_warp) {
             buffer[shared_base + ((count + thread_index) & shared_address_mask)] = v = in_buffer[thread_index];
             reference[shared_base + ((count + thread_index) & shared_address_mask)] = r = in_reference[thread_index];
             t = compareSuperKey(
@@ -1135,14 +1134,14 @@ namespace cuda
       const int* source_reference,
       const node_type* source_buffer,
       const int* segment_lengths,
-      int segment_size,
+      int segment_size_per_warp,
       int size
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const int thread_index = index & (warpSize - 1);
       const int warp_index = (index - thread_index) / warpSize;
-      const int in_start = warp_index * segment_size;
+      const int in_start = warp_index * segment_size_per_warp;
       int out_start = 0, length = 0;
       if (thread_index == 0) {
          for (int i = 0; i < warp_index; ++i) out_start += segment_lengths[i];
@@ -1153,10 +1152,10 @@ namespace cuda
       length = __shfl( length, 0 );
       copyWarp(
          target_reference + out_start, target_buffer + out_start,
-         source_reference + in_start, source_buffer + in_start, segment_size
+         source_reference + in_start, source_buffer + in_start, segment_size_per_warp
       );
 
-      if (thread_index == 0 && in_start + segment_size >= size) {
+      if (thread_index == 0 && in_start + segment_size_per_warp >= size) {
          num_after_removal = out_start + segment_lengths[warp_index];
       }
    }
@@ -1193,7 +1192,7 @@ namespace cuda
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
       constexpr int segment = total_thread_num / WarpSize;
-      const int segment_size = (size - 1 + segment) / segment;
+      const int segment_size_per_warp = divideUp( size, segment );
       const int* other_reference = other_device == nullptr ?
          nullptr : other_device->Reference[source_index] + other_size - 1;
       const node_type* other_coordinates = other_device == nullptr ? nullptr : other_device->CoordinatesDevicePtr;
@@ -1205,14 +1204,14 @@ namespace cuda
          segment_lengths, device.Sort.Reference, device.Sort.Buffer,
          device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, other_reference, other_coordinates,
-         segment_size, size, axis, Dim
+         segment_size_per_warp, size, axis, Dim
       );
       CHECK_KERNEL;
 
       cuRemoveGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
          device.Reference[target_index], device.Buffer[target_index],
          device.Sort.Reference, device.Sort.Buffer,
-         segment_lengths, segment_size, size
+         segment_lengths, segment_size_per_warp, size
       );
       CHECK_KERNEL;
 
@@ -1291,8 +1290,8 @@ namespace cuda
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
-      constexpr int segment = total_thread_num / 32;
-      const int segment_size = (size - 1 + segment) / segment;
+      constexpr int segment = total_thread_num / WarpSize;
+      const int segment_size = divideUp( size, segment );
 
       setDevice( device.ID );
       cuCopyReferenceAndBuffer<<<block_num, thread_num_per_block, 0, device.Stream>>>(
@@ -1544,7 +1543,7 @@ namespace cuda
       mid = start + (end - start) / 2;
 
       const int partition_size = end - start + 1;
-      const int segment_size = (partition_size + warp_group_size - 1) / warp_group_size;
+      const int segment_size = divideUp( partition_size, warp_group_size );
       const int mid_reference = primary_reference[mid];
       partition(
          target_left_reference + start, target_right_reference + start,

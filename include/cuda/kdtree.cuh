@@ -43,7 +43,7 @@ namespace cuda
    constexpr int ThreadNum = 512;
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
-   constexpr int SharedSizeLimit = 1024;
+   constexpr int SharedSizeLimit = WarpSize * WarpSize;
    constexpr int MergePathBlockSize = 512;
 
    struct KdtreeNode
