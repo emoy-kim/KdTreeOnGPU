@@ -251,6 +251,7 @@ namespace cuda
       const int* source_reference,
       const node_type* source_buffer,
       const node_type* coordinates,
+      int size,
       int axis,
       int dim
    )
@@ -258,14 +259,17 @@ namespace cuda
       __shared__ int reference[SharedSizeLimit];
       __shared__ node_type buffer[SharedSizeLimit];
 
-      source_buffer += blockIdx.x * SharedSizeLimit + threadIdx.x;
-      source_reference += blockIdx.x * SharedSizeLimit + threadIdx.x;
-      target_buffer += blockIdx.x * SharedSizeLimit + threadIdx.x;
-      target_reference += blockIdx.x * SharedSizeLimit + threadIdx.x;
+      const auto t = static_cast<int>(threadIdx.x);
+      const int target_block_size = static_cast<int>(blockDim.x) * 2;
+      const int index = static_cast<int>(blockIdx.x * target_block_size + threadIdx.x);
+      source_buffer += index;
+      source_reference += index;
+      target_buffer += index;
+      target_reference += index;
       buffer[threadIdx.x] = source_buffer[0];
       reference[threadIdx.x] = source_reference[0];
-      buffer[threadIdx.x + SharedSizeLimit / 2] = source_buffer[SharedSizeLimit / 2];
-      reference[threadIdx.x + SharedSizeLimit / 2] = source_reference[SharedSizeLimit / 2];
+      buffer[blockDim.x + threadIdx.x] = source_buffer[blockDim.x];
+      reference[blockDim.x + threadIdx.x] = source_reference[blockDim.x];
 
       // Given S = SharedSizeLimit, for all threads, [base[i], base[i+step]] is
       // step 1: [0, 1] ... [S-2, S-1]
@@ -273,20 +277,21 @@ namespace cuda
       // step 4: [0, 4] [1, 5] [2, 6] [3, 7] ... [S-8, S-4] [S-7, S-3] [S-6, S-2] [S-5, S-1]
       //   ...
       // step S/2: [0, S/2] ... [S/2-1, S-1]
-      for (int step = 1; step < SharedSizeLimit; step <<= 1) {
-         const int i = static_cast<int>(threadIdx.x) & (step - 1);
-         int* reference_base = reference + (threadIdx.x - i) * 2;
-         node_type* buffer_base = buffer + (threadIdx.x - i) * 2;
+      for (int step = 1; step < target_block_size; step <<= 1) {
+         const int i = t & (step - 1);
+         const int offset = (t - i) * 2;
+         int* reference_base = reference + offset;
+         node_type* buffer_base = buffer + offset;
 
-         // Merge the sorted array A, base[0] ~ base[step-1], and B, base[step] ~ base[step*2-1]
+         // Merge the sorted array X, base[0] ~ base[step-1], and Y, base[step] ~ base[step*2-1]
          __syncthreads();
          const int reference_x = reference_base[i];
          const node_type buffer_x = buffer_base[i];
-         const int reference_y = reference_base[i + step];
-         const node_type buffer_y = buffer_base[i + step];
          const int x = search(
             reference_x, buffer_x, reference_base + step, buffer_base + step, coordinates, step, step, axis, dim, false
          ) + i;
+         const int reference_y = reference_base[i + step];
+         const node_type buffer_y = buffer_base[i + step];
          const int y = search(
             reference_y, buffer_y, reference_base, buffer_base, coordinates, step, step, axis, dim, true
          ) + i;
@@ -301,8 +306,8 @@ namespace cuda
       __syncthreads();
       target_buffer[0] = buffer[threadIdx.x];
       target_reference[0] = reference[threadIdx.x];
-      target_buffer[SharedSizeLimit / 2] = buffer[threadIdx.x + SharedSizeLimit / 2];
-      target_reference[SharedSizeLimit / 2] = reference[threadIdx.x + SharedSizeLimit / 2];
+      target_buffer[blockDim.x] = buffer[blockDim.x + threadIdx.x];
+      target_reference[blockDim.x] = reference[blockDim.x + threadIdx.x];
    }
 
    __global__
@@ -540,14 +545,20 @@ namespace cuda
       }
 
       assert( size <= SampleStride * device.Sort.MaxSampleNum );
-      assert( size % SharedSizeLimit == 0 );
 
-      cuSortByBlock<<<size / SharedSizeLimit, SharedSizeLimit / 2, 0, device.Stream>>>(
-         in_reference, in_buffer,
-         device.Reference[axis], device.Buffer[axis],
-         device.CoordinatesDevicePtr, axis, Dim
-      );
-      CHECK_KERNEL;
+      int block_num = size / SharedSizeLimit;
+      if (block_num > 0) {
+         cuSortByBlock<<<size / SharedSizeLimit, SharedSizeLimit / 2, 0, device.Stream>>>(
+            in_reference, in_buffer,
+            device.Reference[axis], device.Buffer[axis],
+            device.CoordinatesDevicePtr, size, axis, Dim
+         );
+         CHECK_KERNEL;
+      }
+      if (size % SharedSizeLimit != 0) {
+
+         CHECK_KERNEL;
+      }
 
       /*std::vector<node_type> data(size);
       CHECK_CUDA(
@@ -556,7 +567,8 @@ namespace cuda
             cudaMemcpyDeviceToHost, device.Stream
          )
       );
-      for (int i = 0; i < block_num; ++i) {
+      for (int i = 0; i < size; ++i) std::cout << data[i] << std::endl;
+      for (int i = 0; i < size / SharedSizeLimit; ++i) {
          const node_type* ptr = data.data() + i * SharedSizeLimit;
          for (int j = 0; j < SharedSizeLimit - 1; ++j) assert( ptr[j] <= ptr[j + 1] );
       }*/
@@ -566,7 +578,7 @@ namespace cuda
          const int remained_threads = size % (sorted_size * 2);
          const int total_thread_num = remained_threads > sorted_size ?
             (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
-         const int block_num = divideUp( total_thread_num, thread_num );
+         block_num = divideUp( total_thread_num, thread_num );
          cuGenerateSampleRanks<<<block_num, thread_num, 0, device.Stream>>>(
             device.Sort.LeftRanks, device.Sort.RightRanks,
             in_reference, in_buffer, device.CoordinatesDevicePtr,
