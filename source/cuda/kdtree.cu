@@ -256,8 +256,8 @@ namespace cuda
       int dim
    )
    {
-      __shared__ int reference[SharedSizeLimit];
-      __shared__ node_type buffer[SharedSizeLimit];
+      __shared__ int reference[SharedSize];
+      __shared__ node_type buffer[SharedSize];
 
       const auto t = static_cast<int>(threadIdx.x);
       const int target_block_size = static_cast<int>(blockDim.x) * 2;
@@ -271,7 +271,7 @@ namespace cuda
       buffer[blockDim.x + threadIdx.x] = source_buffer[blockDim.x];
       reference[blockDim.x + threadIdx.x] = source_reference[blockDim.x];
 
-      // Given S = SharedSizeLimit, for all threads, [base[i], base[i+step]] is
+      // Given S = SharedSize, for all threads, [base[i], base[i+step]] is
       // step 1: [0, 1] ... [S-2, S-1]
       // step 2: [0, 2] [1, 3] ... [S-4, S-2], [S-3, S-1]
       // step 4: [0, 4] [1, 5] [2, 6] [3, 7] ... [S-8, S-4] [S-7, S-3] [S-6, S-2] [S-5, S-1]
@@ -570,7 +570,7 @@ namespace cuda
       int* out_reference = nullptr;
       node_type* in_buffer = nullptr;
       node_type* out_buffer = nullptr;
-      for (int step = SharedSizeLimit; step < size; step <<= 1) stage_num++;
+      for (int step = SharedSize; step < size; step <<= 1) stage_num++;
       if (stage_num & 1) {
          in_buffer = device.Sort.Buffer;
          in_reference = device.Sort.Reference;
@@ -586,15 +586,15 @@ namespace cuda
 
       assert( size <= SampleStride * device.Sort.MaxSampleNum );
 
-      int block_num = size / SharedSizeLimit;
+      int block_num = size / SharedSize;
       if (block_num > 0) {
-         cuSortByBlock<<<size / SharedSizeLimit, SharedSizeLimit / 2, 0, device.Stream>>>(
+         cuSortByBlock<<<size / SharedSize, SharedSize / 2, 0, device.Stream>>>(
             in_reference, in_buffer,
             device.Reference[axis], device.Buffer[axis], device.CoordinatesDevicePtr, size, axis, Dim
          );
          CHECK_KERNEL;
       }
-      const int remained_size = size % SharedSizeLimit;
+      const int remained_size = size % SharedSize;
       if (remained_size > 0) {
          int buffer_index = 0;
          const int start_offset = size - remained_size;
@@ -611,7 +611,7 @@ namespace cuda
          }
       }
 
-      for (int sorted_size = SharedSizeLimit; sorted_size < size; sorted_size <<= 1) {
+      for (int sorted_size = SharedSize; sorted_size < size; sorted_size <<= 1) {
          constexpr int thread_num = SampleStride * 2;
          const int remained_threads = size % (sorted_size * 2);
          const int total_thread_num = remained_threads > sorted_size ?
@@ -983,7 +983,7 @@ namespace cuda
       const node_type* coordinates,
       const int* other_reference,
       const node_type* other_coordinates,
-      int segment_size_per_warp,
+      int size_per_warp,
       int size,
       int axis,
       int dim
@@ -993,35 +993,34 @@ namespace cuda
       const int thread_index = index & (warpSize - 1);
       const int warps_per_block = warpSize / 2;
       const int warp_index = (index - thread_index) / warpSize;
-      const int start_segment = warp_index * segment_size_per_warp;
-      if (start_segment + segment_size_per_warp > size) segment_size_per_warp = size - start_segment;
+      const int start_segment = warp_index * size_per_warp;
+      size_per_warp = min( size_per_warp, size - start_segment );
 
-      __shared__ int reference[SharedSizeLimit];
-      __shared__ node_type buffer[SharedSizeLimit];
+      __shared__ int reference[SharedSize];
+      __shared__ node_type buffer[SharedSize];
 
       int* out_reference = target_reference + start_segment;
       node_type* out_buffer = target_buffer + start_segment;
       const int* in_reference = source_reference + start_segment;
       const node_type* in_buffer = source_buffer + start_segment;
-      const int shared_base = warpSize * 2 *  (warp_index % warps_per_block);
+      const int shared_base = warpSize * 2 * (warp_index % warps_per_block);
       const int shared_address_mask = warpSize * 2 - 1;
-      const int mask = (1 << thread_index) - 1;
+      const int precede_mask = (1 << thread_index) - 1;
 
       node_type t, v;
-      int i, r, count = 0;
-      int shuffle_mask = 0;
-      for (i = 0; i < segment_size_per_warp && shuffle_mask == 0; i += warpSize) {
-         if (thread_index < segment_size_per_warp) {
+      int i, r, unique_mask = 0;
+      for (i = 0; i < size_per_warp && unique_mask == 0; i += warpSize) {
+         if (thread_index < size_per_warp) {
             buffer[shared_base + thread_index] = v = in_buffer[thread_index];
             reference[shared_base + thread_index] = r = in_reference[thread_index];
-            if (thread_index != 0) {
+            if (thread_index > 0) {
                t = compareSuperKey(
                   v, buffer[shared_base + thread_index - 1],
                   coordinates + r * dim, coordinates + reference[shared_base + thread_index - 1] * dim,
                   axis, dim
                );
             }
-            else if (warp_index != 0) {
+            else if (warp_index > 0) {
                t = compareSuperKey(
                   v, *(in_buffer - 1),
                   coordinates + r * dim, coordinates + *(in_reference - 1) * dim,
@@ -1046,16 +1045,16 @@ namespace cuda
          in_buffer += warpSize;
          in_reference += warpSize;
 
-         shuffle_mask = static_cast<int>(__ballot( t > 0 ));
+         unique_mask = static_cast<int>(__ballot_sync( __activemask(), t > 0 ));
          if (t > 0) {
-            const int j = __popc( shuffle_mask & mask );
-            buffer[shared_base + ((count + j) & shared_address_mask)] = v;
-            reference[shared_base + ((count + j) & shared_address_mask)] = r;
+            const int j = __popc( unique_mask & precede_mask );
+            buffer[shared_base + j] = v;
+            reference[shared_base + j] = r;
          }
       }
 
-      int old_count = count;
-      count += __popc( shuffle_mask );
+      int count, old_count = 0;
+      count = __popc( unique_mask );
       if (((old_count ^ count) & warpSize) != 0) {
          out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
             buffer[shared_base + (old_count & warpSize) + thread_index];
@@ -1063,8 +1062,8 @@ namespace cuda
             reference[shared_base + (old_count & warpSize) + thread_index];
       }
 
-      for (; i < segment_size_per_warp; i += warpSize) {
-         if (i + thread_index < segment_size_per_warp) {
+      for (; i < size_per_warp; i += warpSize) {
+         if (i + thread_index < size_per_warp) {
             buffer[shared_base + ((count + thread_index) & shared_address_mask)] = v = in_buffer[thread_index];
             reference[shared_base + ((count + thread_index) & shared_address_mask)] = r = in_reference[thread_index];
             t = compareSuperKey(
@@ -1083,15 +1082,15 @@ namespace cuda
          in_buffer += warpSize;
          in_reference += warpSize;
 
-         shuffle_mask = static_cast<int>(__ballot( t > 0 ));
+         unique_mask = static_cast<int>(__ballot_sync( __activemask(), t > 0 ));
          if (t > 0) {
-            const int j = __popc( shuffle_mask & mask );
+            const int j = __popc( unique_mask & precede_mask );
             buffer[shared_base + ((count + j) & shared_address_mask)] = v;
             reference[shared_base + ((count + j) & shared_address_mask)] = r;
          }
 
          old_count = count;
-         count += __popc( shuffle_mask );
+         count += __popc( unique_mask );
          if (((old_count ^ count) & warpSize) != 0) {
             out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
                buffer[shared_base + (old_count & warpSize) + thread_index];
@@ -1189,10 +1188,10 @@ namespace cuda
       );
 
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
       constexpr int segment = total_thread_num / WarpSize;
-      const int segment_size_per_warp = divideUp( size, segment );
+      const int size_per_warp = divideUp( size, segment );
       const int* other_reference = other_device == nullptr ?
          nullptr : other_device->Reference[source_index] + other_size - 1;
       const node_type* other_coordinates = other_device == nullptr ? nullptr : other_device->CoordinatesDevicePtr;
@@ -1204,14 +1203,14 @@ namespace cuda
          segment_lengths, device.Sort.Reference, device.Sort.Buffer,
          device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, other_reference, other_coordinates,
-         segment_size_per_warp, size, axis, Dim
+         size_per_warp, size, axis, Dim
       );
       CHECK_KERNEL;
 
       cuRemoveGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
          device.Reference[target_index], device.Buffer[target_index],
          device.Sort.Reference, device.Sort.Buffer,
-         segment_lengths, segment_size_per_warp, size
+         segment_lengths, size_per_warp, size
       );
       CHECK_KERNEL;
 
@@ -1288,8 +1287,8 @@ namespace cuda
       }
 
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
       constexpr int segment = total_thread_num / WarpSize;
       const int segment_size = divideUp( size, segment );
 
@@ -1319,8 +1318,8 @@ namespace cuda
       }
 
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
 
       setDevice( device.ID );
       cuCopyReference<<<block_num, thread_num_per_block, 0, device.Stream>>>(
@@ -1441,13 +1440,13 @@ namespace cuda
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const int thread_index = index & (warpSize - 1);
-      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int warps_per_block = SharedSize / (2 * warpSize);
       const int warp_index = ((index - thread_index) / warpSize) % warp_group_size;
       const int start_segment = warp_index * segment_size;
       if (start_segment + segment_size > partition_size) segment_size = partition_size - start_segment;
 
-      __shared__ int left_reference[SharedSizeLimit];
-      __shared__ int right_reference[SharedSizeLimit];
+      __shared__ int left_reference[SharedSize];
+      __shared__ int right_reference[SharedSize];
 
       const int* in_reference = source_reference + start_segment;
       int* out_left_reference = target_left_reference + start_segment;
@@ -1573,11 +1572,11 @@ namespace cuda
          return;
       }
 
-      __shared__ int tag[SharedSizeLimit];
-      __shared__ int reference[SharedSizeLimit];
+      __shared__ int tag[SharedSize];
+      __shared__ int reference[SharedSize];
 
       const int warp_index = (index - thread_index) / warpSize;
-      const int warps_per_block = SharedSizeLimit / (2 * warpSize);
+      const int warps_per_block = SharedSize / (2 * warpSize);
       const int shared_base = 2 * warpSize * (warp_index % warps_per_block);
       const int shared_address_mask = 2 * warpSize - 1;
       tag[shared_base + thread_index] = 0;
@@ -1863,8 +1862,8 @@ namespace cuda
       constexpr int warp_num = total_thread_num / WarpSize;
       const auto log_warp_num = static_cast<int>(std::log2( static_cast<double>(warp_num) ));
       const auto log_size = static_cast<int>(std::ceil( std::log2( static_cast<double>(device.TupleNum) ) ));
-      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
 
       setDevice( device.ID );
       int* mid_references = device.MidReferences[depth % 2];
@@ -1986,8 +1985,8 @@ namespace cuda
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int warp_num = total_thread_num;
       const auto log_warp_num = static_cast<int>(std::log2( static_cast<double>(warp_num) ));
-      constexpr int block_num = std::max( total_thread_num * 2 / SharedSizeLimit, 1 );
-      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSizeLimit / 2 );
+      constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
+      constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
       const int loop_levels = log_warp_num < depth ? depth - log_warp_num : 0;
 
       setDevice( device.ID );
@@ -2071,7 +2070,7 @@ namespace cuda
       int dim
    )
    {
-      __shared__ int sums[SharedSizeLimit];
+      __shared__ int sums[SharedSize];
 
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const auto step = static_cast<int>(blockDim.x * gridDim.x);
@@ -2128,7 +2127,7 @@ namespace cuda
    __global__
    void cuSumNodeNum(int* node_sums)
    {
-      __shared__ int sums[SharedSizeLimit];
+      __shared__ int sums[SharedSize];
 
       const auto step = static_cast<int>(blockDim.x * gridDim.x);
       const auto id = static_cast<int>(threadIdx.x);
