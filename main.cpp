@@ -49,9 +49,9 @@ void testCUDA()
    //std::vector<glm::vec3> coordinates;
    //for (int i = 0; i < n; ++i) {
    //   coordinates.emplace_back(
-   //      getRandomValue( -1000.0f, 1000.0f ),
-   //      getRandomValue( -1000.0f, 1000.0f ),
-   //      getRandomValue( -1000.0f, 1000.0f )
+   //      getRandomValue( 0.0f, 100.0f ),
+   //      getRandomValue( 0.0f, 100.0f ),
+   //      getRandomValue( 0.0f, 100.0f )
    //   );
    //}
    std::vector<glm::vec3> coordinates = {

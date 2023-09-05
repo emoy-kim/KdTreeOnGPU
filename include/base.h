@@ -30,10 +30,16 @@
 
 #include "project_constants.h"
 
-template<typename T>
-inline T getRandomValue(T min_value, T max_value)
+inline int getRandomValue(int min_value, int max_value)
 {
    std::mt19937 random_generator(std::chrono::system_clock::now().time_since_epoch().count());
-   std::uniform_real_distribution<T> distribution(min_value, max_value);
+   std::uniform_int_distribution<int> distribution(min_value, max_value);
+   return distribution( random_generator );
+}
+
+inline float getRandomValue(float min_value, float max_value)
+{
+   std::mt19937 random_generator(std::chrono::system_clock::now().time_since_epoch().count());
+   std::uniform_real_distribution<float> distribution(min_value, max_value);
    return distribution( random_generator );
 }
