@@ -975,7 +975,7 @@ namespace cuda
 
    __global__
    void cuRemoveDuplicates(
-      int* segment_lengths,
+      int* unique_nums,
       int* target_reference,
       node_type* target_buffer,
       const int* source_reference,
@@ -990,26 +990,25 @@ namespace cuda
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int warp_index = index / warpSize;
+      const int offset = warp_index * size_per_warp;
       const int thread_index = index & (warpSize - 1);
-      const int warps_per_block = warpSize / 2;
-      const int warp_index = (index - thread_index) / warpSize;
-      const int start_segment = warp_index * size_per_warp;
-      size_per_warp = min( size_per_warp, size - start_segment );
+      size_per_warp = min( size_per_warp, size - offset );
 
       __shared__ int reference[SharedSize];
       __shared__ node_type buffer[SharedSize];
 
-      int* out_reference = target_reference + start_segment;
-      node_type* out_buffer = target_buffer + start_segment;
-      const int* in_reference = source_reference + start_segment;
-      const node_type* in_buffer = source_buffer + start_segment;
+      int* out_reference = target_reference + offset;
+      node_type* out_buffer = target_buffer + offset;
+      const int* in_reference = source_reference + offset;
+      const node_type* in_buffer = source_buffer + offset;
+      const int warps_per_block = warpSize / 2;
       const int shared_base = warpSize * 2 * (warp_index % warps_per_block);
-      const int shared_address_mask = warpSize * 2 - 1;
       const int precede_mask = (1 << thread_index) - 1;
 
       node_type t, v;
-      int i, r, unique_mask = 0;
-      for (i = 0; i < size_per_warp && unique_mask == 0; i += warpSize) {
+      int r, processed_size, unique_mask = 0;
+      for (processed_size = 0; processed_size < size_per_warp && unique_mask == 0; processed_size += warpSize) {
          if (thread_index < size_per_warp) {
             buffer[shared_base + thread_index] = v = in_buffer[thread_index];
             reference[shared_base + thread_index] = r = in_reference[thread_index];
@@ -1040,36 +1039,35 @@ namespace cuda
 
          if (t < 0) {
             removal_error = -1;
-            atomicMin( &removal_error_address, start_segment + thread_index );
+            atomicMin( &removal_error_address, offset + thread_index );
          }
          in_buffer += warpSize;
          in_reference += warpSize;
 
-         unique_mask = static_cast<int>(__ballot_sync( __activemask(), t > 0 ));
+         unique_mask = static_cast<int>(__ballot_sync( 0xffffffff, t > 0 ));
          if (t > 0) {
-            const int j = __popc( unique_mask & precede_mask );
-            buffer[shared_base + j] = v;
-            reference[shared_base + j] = r;
+            const int i = __popc( unique_mask & precede_mask );
+            buffer[shared_base + i] = v;
+            reference[shared_base + i] = r;
          }
       }
 
-      int count, old_count = 0;
-      count = __popc( unique_mask );
-      if (((old_count ^ count) & warpSize) != 0) {
-         out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
-            buffer[shared_base + (old_count & warpSize) + thread_index];
-         out_reference[(old_count & ~(warpSize - 1)) + thread_index] =
-            reference[shared_base + (old_count & warpSize) + thread_index];
+      int write_num = __popc( unique_mask );
+      if (write_num == warpSize) {
+         out_buffer[thread_index] = buffer[shared_base + thread_index];
+         out_reference[thread_index] = reference[shared_base + thread_index];
       }
 
-      for (; i < size_per_warp; i += warpSize) {
-         if (i + thread_index < size_per_warp) {
-            buffer[shared_base + ((count + thread_index) & shared_address_mask)] = v = in_buffer[thread_index];
-            reference[shared_base + ((count + thread_index) & shared_address_mask)] = r = in_reference[thread_index];
+      const int shared_address_mask = warpSize * 2 - 1;
+      for (; processed_size < size_per_warp; processed_size += warpSize) {
+         if (processed_size + thread_index < size_per_warp) {
+            const int i = (write_num + thread_index) & shared_address_mask;
+            const int j = (write_num + thread_index - 1) & shared_address_mask;
+            buffer[shared_base + i] = v = in_buffer[thread_index];
+            reference[shared_base + i] = r = in_reference[thread_index];
             t = compareSuperKey(
-               v, buffer[shared_base + ((count + thread_index - 1) & shared_address_mask)],
-               coordinates + r * dim,
-               coordinates + reference[shared_base + ((count + thread_index - 1) & shared_address_mask)] * dim,
+               v, buffer[shared_base + j],
+               coordinates + r * dim, coordinates + reference[shared_base + j] * dim,
                axis, dim
             );
          }
@@ -1077,36 +1075,34 @@ namespace cuda
 
          if (t < 0) {
             removal_error = -1;
-            atomicMin( &removal_error_address, start_segment + thread_index );
+            atomicMin( &removal_error_address, offset + thread_index );
          }
          in_buffer += warpSize;
          in_reference += warpSize;
 
-         unique_mask = static_cast<int>(__ballot_sync( __activemask(), t > 0 ));
+         unique_mask = static_cast<int>(__ballot_sync( 0xffffffff, t > 0 ));
          if (t > 0) {
-            const int j = __popc( unique_mask & precede_mask );
-            buffer[shared_base + ((count + j) & shared_address_mask)] = v;
-            reference[shared_base + ((count + j) & shared_address_mask)] = r;
+            const int i = (write_num + __popc( unique_mask & precede_mask )) & shared_address_mask;
+            buffer[shared_base + i] = v;
+            reference[shared_base + i] = r;
          }
 
-         old_count = count;
-         count += __popc( unique_mask );
-         if (((old_count ^ count) & warpSize) != 0) {
-            out_buffer[(old_count & ~(warpSize - 1)) + thread_index] =
-               buffer[shared_base + (old_count & warpSize) + thread_index];
-            out_reference[(old_count & ~(warpSize - 1)) + thread_index] =
-               reference[shared_base + (old_count & warpSize) + thread_index];
+         const int n = __popc( unique_mask );
+         if (((write_num ^ (write_num + n)) & warpSize) != 0) {
+            const int i = (write_num & ~(warpSize - 1)) + thread_index;
+            out_buffer[i] = buffer[shared_base + (write_num & warpSize) + thread_index];
+            out_reference[i] = reference[shared_base + (write_num & warpSize) + thread_index];
          }
+         write_num += n;
       }
 
-      if ((count & (warpSize - 1)) > thread_index) {
-         out_buffer[(count & ~(warpSize - 1)) + thread_index] =
-            buffer[shared_base + (count & warpSize) + thread_index];
-         out_reference[(count & ~(warpSize - 1)) + thread_index] =
-            reference[shared_base + (count & warpSize) + thread_index];
+      if (thread_index < (write_num & (warpSize - 1))) {
+         const int i = (write_num & ~(warpSize - 1)) + thread_index;
+         out_buffer[i] = buffer[shared_base + (write_num & warpSize) + thread_index];
+         out_reference[i] = reference[shared_base + (write_num & warpSize) + thread_index];
       }
 
-      if (thread_index == 0 && segment_lengths != nullptr) segment_lengths[warp_index] = count;
+      if (thread_index == 0 && unique_nums != nullptr) unique_nums[warp_index] = write_num;
    }
 
    __device__
@@ -1132,7 +1128,7 @@ namespace cuda
       node_type* target_buffer,
       const int* source_reference,
       const node_type* source_buffer,
-      const int* segment_lengths,
+      const int* unique_nums,
       int segment_size_per_warp,
       int size
    )
@@ -1143,8 +1139,8 @@ namespace cuda
       const int in_start = warp_index * segment_size_per_warp;
       int out_start = 0, length = 0;
       if (thread_index == 0) {
-         for (int i = 0; i < warp_index; ++i) out_start += segment_lengths[i];
-         length = segment_lengths[warp_index];
+         for (int i = 0; i < warp_index; ++i) out_start += unique_nums[i];
+         length = unique_nums[warp_index];
       }
 
       out_start = __shfl( out_start, 0 );
@@ -1155,7 +1151,7 @@ namespace cuda
       );
 
       if (thread_index == 0 && in_start + segment_size_per_warp >= size) {
-         num_after_removal = out_start + segment_lengths[warp_index];
+         num_after_removal = out_start + unique_nums[warp_index];
       }
    }
 
@@ -1196,25 +1192,30 @@ namespace cuda
          nullptr : other_device->Reference[source_index] + other_size - 1;
       const node_type* other_coordinates = other_device == nullptr ? nullptr : other_device->CoordinatesDevicePtr;
 
-      int* segment_lengths;
+      int* unique_nums;
       setDevice( device.ID );
-      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&segment_lengths), sizeof( int ) * segment ) );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&unique_nums), sizeof( int ) * segment ) );
       cuRemoveDuplicates<<<block_num, thread_num_per_block, 0, device.Stream>>>(
-         segment_lengths, device.Sort.Reference, device.Sort.Buffer,
+         unique_nums, device.Sort.Reference, device.Sort.Buffer,
          device.Reference[source_index], device.Buffer[source_index],
          device.CoordinatesDevicePtr, other_reference, other_coordinates,
          size_per_warp, size, axis, Dim
       );
       CHECK_KERNEL;
 
+      //std::vector<node_type> n(size);
+      //CHECK_CUDA(cudaMemcpyAsync( n.data(), device.Sort.Buffer, sizeof( node_type ) * size, cudaMemcpyDeviceToHost, device.Stream ));
+      //for (const auto& v : n) std::cout << v << " ";
+      //std::cout << "\n";
+
       cuRemoveGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
          device.Reference[target_index], device.Buffer[target_index],
          device.Sort.Reference, device.Sort.Buffer,
-         segment_lengths, size_per_warp, size
+         unique_nums, size_per_warp, size
       );
       CHECK_KERNEL;
 
-      CHECK_CUDA( cudaFree( segment_lengths ) );
+      CHECK_CUDA( cudaFree( unique_nums ) );
 
       CHECK_CUDA(
          cudaMemcpyFromSymbolAsync( &error, removal_error, sizeof( error ), 0, cudaMemcpyDeviceToHost, device.Stream )
