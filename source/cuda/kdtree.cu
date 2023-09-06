@@ -1652,8 +1652,8 @@ namespace cuda
       int* target_reference,
       const int* source_left_reference,
       const int* source_right_reference,
-      const int* segment_left_lengths,
-      const int* segment_right_lengths,
+      const int* left_unique_num_in_warp,
+      const int* right_unique_num_in_warp,
       int start,
       int end,
       int depth
@@ -1678,20 +1678,18 @@ namespace cuda
 
       int out_start = start;
       if (warp_lane == 0) {
-         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += segment_left_lengths[i];
-         segment_size = segment_left_lengths[warp_index];
+         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += left_unique_num_in_warp[i];
+         segment_size = left_unique_num_in_warp[warp_index];
       }
-
       out_start = __shfl_sync( 0xffffffff, out_start, 0 );
       segment_size = __shfl_sync( 0xffffffff, segment_size, 0 );
       copyReferenceWarp( target_reference + out_start, source_left_reference + start_segment, segment_size );
 
       out_start = mid + 1;
       if (warp_lane == 0) {
-         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += segment_right_lengths[i];
-         segment_size = segment_right_lengths[warp_index];
+         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += right_unique_num_in_warp[i];
+         segment_size = right_unique_num_in_warp[warp_index];
       }
-
       out_start = __shfl_sync( 0xffffffff, out_start, 0 );
       segment_size = __shfl_sync( 0xffffffff, segment_size, 0 );
       copyReferenceWarp( target_reference + out_start, source_right_reference + start_segment, segment_size );
@@ -1986,26 +1984,24 @@ namespace cuda
       const int loop_levels = log_warp_num < depth ? depth - log_warp_num : 0;
 
       setDevice( device.ID );
-      int* mid_references = device.MidReferences[depth % 2];
-      int* last_mid_references = depth == 0 ? nullptr : device.MidReferences[(depth - 1) % 2];
+      int* mid_references = device.MidReferences[depth & 1];
+      const int* last_mid_references = device.MidReferences[(depth - 1) & 1];
       for (int loop = 0; loop < (1 << loop_levels); ++loop) {
-         int start = 0, end = device.TupleNum - 1, mid;
+         int start = 0, end = device.TupleNum - 1;
          for (int i = 1; i <= loop_levels; ++i) {
-            mid = start + (end - start) / 2;
+            const int mid = start + (end - start) / 2;
             if (loop & (1 << (loop_levels - i))) start = mid + 1;
             else end = mid - 1;
-
-            int r = 1 + axis;
-            r = r < Dim ? r : r - Dim;
-            cuPartitionFinal<<<block_num, thread_num_per_block, 0, device.Stream>>>(
-               device.Root,
-               mid_references + loop * total_thread_num,
-               last_mid_references + loop * total_thread_num / 2,
-               device.Reference[axis],
-               start, end, depth - loop_levels
-            );
-            CHECK_KERNEL;
          }
+
+         cuPartitionFinal<<<block_num, thread_num_per_block, 0, device.Stream>>>(
+            device.Root,
+            mid_references + loop * total_thread_num,
+            last_mid_references + loop * total_thread_num / 2,
+            device.Reference[axis],
+            start, end, depth - loop_levels
+         );
+         CHECK_KERNEL;
       }
    }
 
@@ -2078,7 +2074,7 @@ namespace cuda
             count++;
             const int right = root[node].RightChildIndex;
             next_child[i * 2 + 1] = right;
-            if (right != -1) {
+            if (right >= 0) {
                if (compareSuperKey(
                      coordinates + root[right].Index * dim, coordinates + root[node].Index * dim, axis, dim
                    ) <= 0) {
@@ -2088,7 +2084,7 @@ namespace cuda
 
             const int left = root[node].LeftChildIndex;
             next_child[i * 2] = left;
-            if (left != -1) {
+            if (left >= 0) {
                if (compareSuperKey(
                      coordinates + root[left].Index * dim, coordinates + root[node].Index * dim, axis, dim
                    ) >= 0) {
@@ -2110,7 +2106,7 @@ namespace cuda
       }
 
       if (id < warpSize) {
-         if (blockDim.x >= 2 * warpSize) count += sums[id + warpSize];
+         if (blockDim.x >= warpSize * 2) count += sums[id + warpSize];
          for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
             count += __shfl_down_sync( 0xffffffff, count, offset );
          }
@@ -2141,13 +2137,13 @@ namespace cuda
       }
 
       if (id < warpSize) {
-         if (blockDim.x >= 2 * warpSize) sum += sums[id + warpSize];
+         if (blockDim.x >= warpSize * 2) sum += sums[id + warpSize];
          for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
             sum += __shfl_down_sync( 0xffffffff, sum, offset );
          }
       }
 
-      if (id == 0) node_sums[blockIdx.x] += sum;
+      if (id == 0) node_sums[blockIdx.x] = sum;
    }
 
    int KdtreeCUDA::verify(Device& device, int start_axis) const
@@ -2172,8 +2168,8 @@ namespace cuda
          const int needed_threads = 1 << i;
          const int block_num = std::clamp( needed_threads / ThreadNum, 1, ThreadBlockNum );
          const int axis = (i + start_axis) % Dim;
-         child = device.MidReferences[i % 2];
-         next_child = device.MidReferences[(i + 1) % 2];
+         child = device.MidReferences[i & 1];
+         next_child = device.MidReferences[(i + 1) & 1];
          cuVerify<<<block_num, ThreadNum, 0, device.Stream>>>(
             device.NodeSums, next_child,
             child, device.Root, device.CoordinatesDevicePtr, needed_threads, axis, Dim
@@ -2273,7 +2269,7 @@ namespace cuda
 
       for (int i = 0; i < depth; ++i) std::cout << "       ";
 
-      const node_type* tuple = Coordinates + kd_nodes[index].Index;
+      const node_type* tuple = Coordinates + kd_nodes[index].Index * Dim;
       std::cout << "(" << tuple[0] << ",";
       for (int i = 1; i < Dim - 1; ++i) std::cout << tuple[i] << ",";
       std::cout << tuple[Dim - 1] << ")\n";
