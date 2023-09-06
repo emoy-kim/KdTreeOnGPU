@@ -95,14 +95,14 @@ namespace cuda
          std::vector<int*> Reference;
          std::vector<node_type*> Buffer;
          node_type* CoordinatesDevicePtr;
-         int* LeftSegmentLengths;
-         int* RightSegmentLengths;
+         int* LeftUniqueNumInWarp;
+         int* RightUniqueNumInWarp;
          int* NodeSums;
          std::array<int*, 2> MidReferences;
 
          Device() :
             ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
-            CoordinatesDevicePtr( nullptr ), LeftSegmentLengths( nullptr ), RightSegmentLengths( nullptr ),
+            CoordinatesDevicePtr( nullptr ), LeftUniqueNumInWarp( nullptr ), RightUniqueNumInWarp( nullptr ),
             NodeSums( nullptr ), MidReferences{} {}
       };
 
