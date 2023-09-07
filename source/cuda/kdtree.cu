@@ -1424,8 +1424,8 @@ namespace cuda
    void partition(
       int* target_left_reference,
       int* target_right_reference,
-      int* left_unique_num_in_warp,
-      int* right_unique_num_in_warp,
+      int* left_child_num_in_warp,
+      int* right_child_num_in_warp,
       const int* source_reference,
       const node_type* __restrict__ coordinates,
       int mid_reference,
@@ -1433,11 +1433,11 @@ namespace cuda
       int partition_size,
       int axis,
       int dim,
-      int warp_group_size
+      int warp_num_per_node
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const int warp_index = (index / warpSize) & (warp_group_size - 1);
+      const int warp_index = (index / warpSize) & (warp_num_per_node - 1);
       const int warp_lane = index & (warpSize - 1);
       const int offset = warp_index * size_per_warp;
       size_per_warp = min( size_per_warp, partition_size - offset );
@@ -1448,7 +1448,7 @@ namespace cuda
       int* out_left_reference = target_left_reference + offset;
       int* out_right_reference = target_right_reference + offset;
       const int* in_reference = source_reference + offset;
-      const int warps_per_block = SharedSize / (2 * warpSize);
+      const int warps_per_block = warpSize / 2;
       const int shared_base = warpSize * 2 * ((index / warpSize) % warps_per_block);
       const int shared_address_mask = warpSize * 2 - 1;
       const int precede_mask = (1 << warp_lane) - 1;
@@ -1502,15 +1502,15 @@ namespace cuda
          out_right_reference[i] = right_reference[shared_base + (right_write_num & warpSize) + warp_lane];
       }
 
-      if (warp_lane == 0 && left_unique_num_in_warp != nullptr) left_unique_num_in_warp[warp_index] = left_write_num;
-      if (warp_lane == 0 && right_unique_num_in_warp != nullptr) right_unique_num_in_warp[warp_index] = right_write_num;
+      if (warp_lane == 0 && left_child_num_in_warp != nullptr) left_child_num_in_warp[warp_index] = left_write_num;
+      if (warp_lane == 0 && right_child_num_in_warp != nullptr) right_child_num_in_warp[warp_index] = right_write_num;
    }
 
    __global__
    void cuPartition(
       KdtreeNode* root,
-      int* left_unique_num_in_warp,
-      int* right_unique_num_in_warp,
+      int* left_child_num_in_warp,
+      int* right_child_num_in_warp,
       int* target_left_reference,
       int* target_right_reference,
       int* mid_references,
@@ -1526,31 +1526,31 @@ namespace cuda
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
-      const int warp_group_size = all_warps >> depth;
+      const auto total_warp_num = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int warp_num_per_node = total_warp_num >> depth;
       const int warp_index = index / warpSize;
       const int warp_lane = index & (warpSize - 1);
 
       int mid = start + (end - start) / 2;
       for (int i = 1; i <= depth; ++i) {
-         if (warp_index & (all_warps >> i)) start = mid + 1;
+         if (warp_index & (total_warp_num >> i)) start = mid + 1;
          else end = mid - 1;
          mid = start + (end - start) / 2;
       }
 
       const int partition_size = end - start + 1;
-      const int size_per_warp = divideUp( partition_size, warp_group_size );
+      const int size_per_warp = divideUp( partition_size, warp_num_per_node );
       const int mid_reference = primary_reference[mid];
       partition(
          target_left_reference + start, target_right_reference + start,
-         left_unique_num_in_warp + (warp_index & ~(warp_group_size - 1)),
-         right_unique_num_in_warp + (warp_index & ~(warp_group_size - 1)),
+         left_child_num_in_warp + (warp_index & ~(warp_num_per_node - 1)),
+         right_child_num_in_warp + (warp_index & ~(warp_num_per_node - 1)),
          source_reference + start, coordinates,
-         mid_reference, size_per_warp, partition_size, axis, dim, warp_group_size
+         mid_reference, size_per_warp, partition_size, axis, dim, warp_num_per_node
       );
 
       if (warp_lane == 0) {
-         const int m = warp_index / warp_group_size;
+         const int m = warp_index / warp_num_per_node;
          mid_references[m] = mid_reference;
          if (last_mid_references != nullptr) {
             if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
@@ -1652,47 +1652,51 @@ namespace cuda
       int* target_reference,
       const int* source_left_reference,
       const int* source_right_reference,
-      const int* left_unique_num_in_warp,
-      const int* right_unique_num_in_warp,
+      const int* left_child_num_in_warp,
+      const int* right_child_num_in_warp,
       int start,
       int end,
       int depth
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
-      const int warp_group_size = all_warps >> depth;
+      const auto total_warp_num = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int warp_num_per_node = total_warp_num >> depth;
       const int warp_lane = index & (warpSize - 1);
       const int warp_index = index / warpSize;
 
       int mid = start + (end - start) / 2;
-      for (int i = 0; i < depth; ++i) {
-         if (warp_index & (all_warps >> (i + 1))) start = mid + 1;
+      for (int i = 1; i <= depth; ++i) {
+         if (warp_index & (total_warp_num >> i)) start = mid + 1;
          else end = mid - 1;
          mid = start + (end - start) / 2;
       }
 
       const int partition_size = end - start + 1;
-      int segment_size = (partition_size + warp_group_size - 1) / warp_group_size;
-      const int start_segment = start + segment_size * (warp_index - (warp_index & ~(warp_group_size - 1)));
+      const int size_per_warp = divideUp( partition_size, warp_num_per_node );
+      const int offset = start + size_per_warp * (warp_index - (warp_index & ~(warp_num_per_node - 1)));
 
-      int out_start = start;
+      int target_offset = start, child_num_in_this_warp = 0;
       if (warp_lane == 0) {
-         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += left_unique_num_in_warp[i];
-         segment_size = left_unique_num_in_warp[warp_index];
+         for (int i = warp_index & ~(warp_num_per_node - 1); i < warp_index; ++i) {
+            target_offset += left_child_num_in_warp[i];
+         }
+         child_num_in_this_warp = left_child_num_in_warp[warp_index];
       }
-      out_start = __shfl_sync( 0xffffffff, out_start, 0 );
-      segment_size = __shfl_sync( 0xffffffff, segment_size, 0 );
-      copyReferenceWarp( target_reference + out_start, source_left_reference + start_segment, segment_size );
+      target_offset = __shfl_sync( 0xffffffff, target_offset, 0 );
+      child_num_in_this_warp = __shfl_sync( 0xffffffff, child_num_in_this_warp, 0 );
+      copyReferenceWarp( target_reference + target_offset, source_left_reference + offset, child_num_in_this_warp );
 
-      out_start = mid + 1;
+      target_offset = mid + 1;
       if (warp_lane == 0) {
-         for (int i = warp_index & ~(warp_group_size - 1); i < warp_index; ++i) out_start += right_unique_num_in_warp[i];
-         segment_size = right_unique_num_in_warp[warp_index];
+         for (int i = warp_index & ~(warp_num_per_node - 1); i < warp_index; ++i) {
+            target_offset += right_child_num_in_warp[i];
+         }
+         child_num_in_this_warp = right_child_num_in_warp[warp_index];
       }
-      out_start = __shfl_sync( 0xffffffff, out_start, 0 );
-      segment_size = __shfl_sync( 0xffffffff, segment_size, 0 );
-      copyReferenceWarp( target_reference + out_start, source_right_reference + start_segment, segment_size );
+      target_offset = __shfl_sync( 0xffffffff, target_offset, 0 );
+      child_num_in_this_warp = __shfl_sync( 0xffffffff, child_num_in_this_warp, 0 );
+      copyReferenceWarp( target_reference + target_offset, source_right_reference + offset, child_num_in_this_warp );
    }
 
    __global__
@@ -1854,20 +1858,20 @@ namespace cuda
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int warp_num = total_thread_num / WarpSize;
-      const auto log_warp_num = static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
-      const auto log_size = static_cast<int>(std::ceil( std::log2( static_cast<double>(device.TupleNum) ) ));
+      const auto max_depth_for_warp_to_cover =
+         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
 
       setDevice( device.ID );
       int* mid_references = device.MidReferences[depth & 1];
       const int* last_mid_references = depth == 0 ? nullptr : device.MidReferences[(depth - 1) & 1];
-      if (depth < log_warp_num) {
+      if (depth < max_depth_for_warp_to_cover) {
          for (int i = 1; i < Dim; ++i) {
             int r = i + axis;
             r = r < Dim ? r : r - Dim;
             cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
-               device.Root, device.LeftUniqueNumInWarp, device.RightUniqueNumInWarp,
+               device.Root, device.LeftChildNumInWarp, device.RightChildNumInWarp,
                device.Reference[Dim], device.Reference[Dim + 1], mid_references,
                last_mid_references, device.Reference[r], device.Reference[axis],
                device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth
@@ -1877,14 +1881,15 @@ namespace cuda
             cuRemovePartitionGaps<<<block_num, thread_num_per_block, 0, device.Stream>>>(
                device.Reference[r],
                device.Reference[Dim], device.Reference[Dim + 1],
-               device.LeftUniqueNumInWarp, device.RightUniqueNumInWarp,
+               device.LeftChildNumInWarp, device.RightChildNumInWarp,
                0, device.TupleNum - 1, depth
             );
             CHECK_KERNEL;
          }
       }
       else {
-         const int log_sub_size = log_size - depth;
+         const int log_sub_size =
+            static_cast<int>(std::ceil( std::log2( static_cast<double>(device.TupleNum) ) )) - depth;
          if (log_sub_size > 5) {
             for (int i = 1; i < Dim; ++i) {
                int r = i + axis;
@@ -1892,7 +1897,7 @@ namespace cuda
                cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
                   device.Root, device.Reference[Dim], mid_references,
                   last_mid_references, device.Reference[r], device.Reference[axis],
-                  device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth, log_warp_num
+                  device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth, max_depth_for_warp_to_cover
                );
                CHECK_KERNEL;
 
@@ -1903,7 +1908,7 @@ namespace cuda
             }
          }
          else {
-            const int log_sub_warp_num = log_warp_num - (log_sub_size - 5);
+            const int log_sub_warp_num = max_depth_for_warp_to_cover - (log_sub_size - 5);
             for (int i = 1; i < Dim; ++i) {
                int r = i + axis;
                r = r < Dim ? r : r - Dim;
@@ -1974,7 +1979,7 @@ namespace cuda
       }
    }
 
-   void KdtreeCUDA::partitionDimensionFinal(Device& device, int axis, int depth) const
+   void KdtreeCUDA::partitionDimensionFinal(Device& device, int axis, int depth)
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
       constexpr int warp_num = total_thread_num;
@@ -2010,8 +2015,8 @@ namespace cuda
       constexpr int warp_num = ThreadBlockNum * ThreadNum / WarpSize;
       for (auto& device : Devices) {
          setDevice( device.ID );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.LeftUniqueNumInWarp), sizeof( int ) * warp_num ) );
-         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.RightUniqueNumInWarp), sizeof( int ) * warp_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.LeftChildNumInWarp), sizeof( int ) * warp_num ) );
+         CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.RightChildNumInWarp), sizeof( int ) * warp_num ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[0]), sizeof( int ) * device.TupleNum ) );
          CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device.MidReferences[1]), sizeof( int ) * device.TupleNum ) );
       }
@@ -2040,8 +2045,8 @@ namespace cuda
       for (auto& device : Devices) {
          setDevice( device.ID );
          CHECK_CUDA( cudaStreamSynchronize( device.Stream ) );
-         CHECK_CUDA( cudaFree( device.LeftUniqueNumInWarp ) );
-         CHECK_CUDA( cudaFree( device.RightUniqueNumInWarp ) );
+         CHECK_CUDA( cudaFree( device.LeftChildNumInWarp ) );
+         CHECK_CUDA( cudaFree( device.RightChildNumInWarp ) );
          CHECK_CUDA( cudaFree( device.MidReferences[0] ) );
          CHECK_CUDA( cudaFree( device.MidReferences[1] ) );
       }

@@ -95,14 +95,14 @@ namespace cuda
          std::vector<int*> Reference;
          std::vector<node_type*> Buffer;
          node_type* CoordinatesDevicePtr;
-         int* LeftUniqueNumInWarp;
-         int* RightUniqueNumInWarp;
+         int* LeftChildNumInWarp;
+         int* RightChildNumInWarp;
          int* NodeSums;
          std::array<int*, 2> MidReferences;
 
          Device() :
             ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
-            CoordinatesDevicePtr( nullptr ), LeftUniqueNumInWarp( nullptr ), RightUniqueNumInWarp( nullptr ),
+            CoordinatesDevicePtr( nullptr ), LeftChildNumInWarp( nullptr ), RightChildNumInWarp( nullptr ),
             NodeSums( nullptr ), MidReferences{} {}
       };
 
@@ -139,7 +139,7 @@ namespace cuda
       static void copyReference(Device& device, int source_index, int target_index, int size);
       void sort(std::vector<int>& end);
       void partitionDimension(Device& device, int axis, int depth) const;
-      void partitionDimensionFinal(Device& device, int axis, int depth) const;
+      static void partitionDimensionFinal(Device& device, int axis, int depth);
       void build();
       [[nodiscard]] int verify(Device& device, int start_axis) const;
       [[nodiscard]] int verify();
