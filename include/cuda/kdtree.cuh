@@ -44,7 +44,6 @@ namespace cuda
    constexpr int ThreadBlockNum = 32;
    constexpr int SampleStride = 128;
    constexpr int SharedSize = WarpSize * WarpSize;
-   constexpr int MergePathBlockSize = 512;
 
    struct KdtreeNode
    {
@@ -89,7 +88,6 @@ namespace cuda
          SortGPU Sort;
          KdtreeNode* Root;
          cudaStream_t Stream;
-         cudaEvent_t SyncEvent;
          std::vector<int*> Reference;
          std::vector<node_type*> Buffer;
          node_type* CoordinatesDevicePtr;
@@ -99,7 +97,7 @@ namespace cuda
          std::array<int*, 2> MidReferences;
 
          CUDADevice() :
-            ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
+            ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ),
             CoordinatesDevicePtr( nullptr ), LeftChildNumInWarp( nullptr ), RightChildNumInWarp( nullptr ),
             NodeSums( nullptr ), MidReferences{} {}
       };

@@ -43,7 +43,6 @@ namespace cuda
       }
       if (Device.CoordinatesDevicePtr != nullptr) cudaFree( Device.CoordinatesDevicePtr );
       if (Device.Root != nullptr) cudaFree( Device.Root );
-      cudaEventDestroy( Device.SyncEvent );
       cudaStreamDestroy( Device.Stream );
    }
 
@@ -60,7 +59,6 @@ namespace cuda
 
       CHECK_CUDA( cudaSetDevice( Device.ID ) );
       CHECK_CUDA( cudaStreamCreate( &Device.Stream ) );
-      CHECK_CUDA( cudaEventCreate( &Device.SyncEvent ) );
    }
 
    __global__
