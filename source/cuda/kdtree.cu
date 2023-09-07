@@ -1857,16 +1857,16 @@ namespace cuda
    void KdtreeCUDA::partitionDimension(Device& device, int axis, int depth) const
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int warp_num = total_thread_num / WarpSize;
-      const auto max_depth_for_warp_to_cover =
-         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
+      constexpr int warp_num = total_thread_num / WarpSize;
+      const auto max_controllable_depth_for_warp =
+         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
 
       setDevice( device.ID );
       int* mid_references = device.MidReferences[depth & 1];
       const int* last_mid_references = depth == 0 ? nullptr : device.MidReferences[(depth - 1) & 1];
-      if (depth < max_depth_for_warp_to_cover) {
+      if (depth < max_controllable_depth_for_warp) {
          for (int i = 1; i < Dim; ++i) {
             int r = i + axis;
             r = r < Dim ? r : r - Dim;
@@ -1897,7 +1897,7 @@ namespace cuda
                cuPartition<<<block_num, thread_num_per_block, 0, device.Stream>>>(
                   device.Root, device.Reference[Dim], mid_references,
                   last_mid_references, device.Reference[r], device.Reference[axis],
-                  device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth, max_depth_for_warp_to_cover
+                  device.CoordinatesDevicePtr, 0, device.TupleNum - 1, axis, Dim, depth, max_controllable_depth_for_warp
                );
                CHECK_KERNEL;
 
@@ -1908,7 +1908,7 @@ namespace cuda
             }
          }
          else {
-            const int log_sub_warp_num = max_depth_for_warp_to_cover - (log_sub_size - 5);
+            const int log_sub_warp_num = max_controllable_depth_for_warp - (log_sub_size - 5);
             for (int i = 1; i < Dim; ++i) {
                int r = i + axis;
                r = r < Dim ? r : r - Dim;
@@ -1951,12 +1951,12 @@ namespace cuda
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x);
+      const auto total_warp_num = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const int warp_index = index / warpSize;
 
-      int mid;
-      for (int i = 0; i < depth; ++i) {
-         mid = start + (end - start) / 2;
-         if (index & (all_warps >> (i + 1))) start = mid + 1;
+      for (int i = 1; i <= depth; ++i) {
+         const int mid = start + (end - start) / 2;
+         if (warp_index & (total_warp_num >> i)) start = mid + 1;
          else end = mid - 1;
       }
 
@@ -1973,20 +1973,23 @@ namespace cuda
       }
 
       if (mid_reference != -1) {
-         mid_references[index] = mid_reference;
-         if (index & 1) root[last_mid_references[index >> 1]].RightChildIndex = mid_reference;
-         else root[last_mid_references[index >> 1]].LeftChildIndex = mid_reference;
+         const int warp_num_per_node = total_warp_num >> depth;
+         const int m = warp_index / warp_num_per_node;
+         mid_references[m] = mid_reference;
+         if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
+         else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
       }
    }
 
    void KdtreeCUDA::partitionDimensionFinal(Device& device, int axis, int depth)
    {
       constexpr int total_thread_num = ThreadBlockNum * ThreadNum;
-      constexpr int warp_num = total_thread_num;
-      const auto log_warp_num = static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
       constexpr int block_num = std::max( total_thread_num * 2 / SharedSize, 1 );
       constexpr int thread_num_per_block = std::min( total_thread_num, SharedSize / 2 );
-      const int loop_levels = log_warp_num < depth ? depth - log_warp_num : 0;
+      constexpr int warp_num = total_thread_num / WarpSize;
+      const auto max_controllable_depth_for_warp =
+         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
+      const int loop_levels = std::max( depth - max_controllable_depth_for_warp, 0 );
 
       setDevice( device.ID );
       int* mid_references = device.MidReferences[depth & 1];
@@ -2001,8 +2004,8 @@ namespace cuda
 
          cuPartitionFinal<<<block_num, thread_num_per_block, 0, device.Stream>>>(
             device.Root,
-            mid_references + loop * total_thread_num,
-            last_mid_references + loop * total_thread_num / 2,
+            mid_references + loop * warp_num,
+            last_mid_references + loop * warp_num / 2,
             device.Reference[axis],
             start, end, depth - loop_levels
          );
@@ -2268,21 +2271,31 @@ namespace cuda
          << "\n\t* Verify Time = " << verify_time << " sec.\n\n";
    }
 
-   void KdtreeCUDA::print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const
+   void KdtreeCUDA::print(
+      std::vector<node_type>& output,
+      const std::vector<KdtreeNode>& kd_nodes,
+      int index,
+      int depth
+   ) const
    {
-      if (kd_nodes[index].RightChildIndex >= 0) print( kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+      if (kd_nodes[index].RightChildIndex >= 0) print( output, kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
 
       for (int i = 0; i < depth; ++i) std::cout << "       ";
 
       const node_type* tuple = Coordinates + kd_nodes[index].Index * Dim;
+      output.emplace_back( tuple[0] );
       std::cout << "(" << tuple[0] << ",";
-      for (int i = 1; i < Dim - 1; ++i) std::cout << tuple[i] << ",";
+      for (int i = 1; i < Dim - 1; ++i) {
+         output.emplace_back( tuple[i] );
+         std::cout << tuple[i] << ",";
+      }
+      output.emplace_back( tuple[Dim - 1] );
       std::cout << tuple[Dim - 1] << ")\n";
 
-      if (kd_nodes[index].LeftChildIndex >= 0) print( kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
+      if (kd_nodes[index].LeftChildIndex >= 0) print( output, kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
    }
 
-   void KdtreeCUDA::print() const
+   void KdtreeCUDA::print(std::vector<node_type>& output) const
    {
       if (RootNode < 0 || Coordinates == nullptr) return;
 
@@ -2309,7 +2322,7 @@ namespace cuda
          }
       }
 
-      print( kd_nodes, RootNode, 0 );
+      print( output, kd_nodes, RootNode, 0 );
    }
 }
 #endif
