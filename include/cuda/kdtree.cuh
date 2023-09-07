@@ -62,7 +62,8 @@ namespace cuda
       explicit KdtreeCUDA(const node_type* vertices, int size, int dim);
       ~KdtreeCUDA();
 
-      void print(std::vector<node_type>& output) const;
+      void print() const;
+      void getResult(std::vector<node_type>& output) const;
 
    private:
       inline static int DeviceNum = 0;
@@ -144,7 +145,13 @@ namespace cuda
       [[nodiscard]] int verify(Device& device, int start_axis) const;
       [[nodiscard]] int verify();
       void create();
-      void print(std::vector<node_type>& output, const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;
+      void print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;
+      void getResult(
+         std::vector<node_type>& output,
+         const std::vector<KdtreeNode>& kd_nodes,
+         int index,
+         int depth
+      ) const;
    };
 }
 #endif

@@ -1717,34 +1717,34 @@ namespace cuda
    )
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const auto all_warps = static_cast<int>(blockDim.x * gridDim.x / warpSize);
+      const auto total_warp_num = static_cast<int>(blockDim.x * gridDim.x / warpSize);
       const int warp_lane = index & (warpSize - 1);
       const int warp_index = index / warpSize;
       const int loop_levels = depth - log_warp_num;
       for (int loop = 0; loop < (1 << loop_levels); ++loop) {
-         int mid;
+         int s = start, e = end, mid;
          for (int i = 1; i <= loop_levels; ++i) {
-            mid = start + (end - start) / 2;
-            if (loop & (1 << (loop_levels - i))) start = mid + 1;
-            else end = mid - 1;
+            mid = s + (e - s) / 2;
+            if (loop & (1 << (loop_levels - i))) s = mid + 1;
+            else e = mid - 1;
          }
-         for (int i = 0; i < log_warp_num; ++i) {
-            mid = start + (end - start) / 2;
-            if (warp_index & (all_warps >> (i + 1))) start = mid + 1;
-            else end = mid - 1;
+         for (int i = 1; i <= log_warp_num; ++i) {
+            mid = s + (e - s) / 2;
+            if (warp_index & (total_warp_num >> i)) s = mid + 1;
+            else e = mid - 1;
          }
-         mid = start + (end - start) / 2;
+         mid = s + (e - s) / 2;
 
-         const int partition_size = end - start + 1;
+         const int partition_size = e - s + 1;
          const int mid_reference = primary_reference[mid];
          partition(
-            target_reference + start, target_reference + mid + 1, nullptr, nullptr,
-            source_reference + start, coordinates,
+            target_reference + s, target_reference + mid + 1, nullptr, nullptr,
+            source_reference + s, coordinates,
             mid_reference, partition_size, partition_size, axis, dim, 1
          );
 
          if (warp_lane == 0) {
-            const int m = warp_index + all_warps * loop;
+            const int m = warp_index + total_warp_num * loop;
             mid_references[m] = mid_reference;
             if (last_mid_references != nullptr) {
                if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
@@ -1822,24 +1822,24 @@ namespace cuda
       const int sub_warp_index = (index - sub_thread_index) / sub_size;
       const int loop_levels = depth - log_sub_warp_num;
       for (int loop = 0; loop < (1 << loop_levels); ++loop) {
-         int mid;
+         int s = start, e = end, mid;
          for (int i = 1; i <= loop_levels; ++i) {
-            mid = start + (end - start) / 2;
-            if (loop & (1 << (loop_levels - i))) start = mid + 1;
-            else end = mid - 1;
+            mid = s + (e - s) / 2;
+            if (loop & (1 << (loop_levels - i))) s = mid + 1;
+            else e = mid - 1;
          }
-         for (int i = 0; i < log_sub_warp_num; ++i) {
-            mid = start + (end - start) / 2;
-            if (sub_warp_index & (all_sub_warps >> (i + 1))) start = mid + 1;
-            else end = mid - 1;
+         for (int i = 1; i <= log_sub_warp_num; ++i) {
+            mid = s + (e - s) / 2;
+            if (sub_warp_index & (all_sub_warps >> i)) s = mid + 1;
+            else e = mid - 1;
          }
-         mid = start + (end - start) / 2;
+         mid = s + (e - s) / 2;
 
-         const int partition_size = end - start + 1;
+         const int partition_size = e - s + 1;
          const int mid_reference = primary_reference[mid];
          subpartition(
-            target_reference + start, target_reference + mid + 1,
-            source_reference + start, coordinates,
+            target_reference + s, target_reference + mid + 1,
+            source_reference + s, coordinates,
             mid_reference, partition_size, axis, dim, sub_size
          );
 
@@ -2271,31 +2271,21 @@ namespace cuda
          << "\n\t* Verify Time = " << verify_time << " sec.\n\n";
    }
 
-   void KdtreeCUDA::print(
-      std::vector<node_type>& output,
-      const std::vector<KdtreeNode>& kd_nodes,
-      int index,
-      int depth
-   ) const
+   void KdtreeCUDA::print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const
    {
-      if (kd_nodes[index].RightChildIndex >= 0) print( output, kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+      if (kd_nodes[index].RightChildIndex >= 0) print( kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
 
       for (int i = 0; i < depth; ++i) std::cout << "       ";
 
       const node_type* tuple = Coordinates + kd_nodes[index].Index * Dim;
-      output.emplace_back( tuple[0] );
       std::cout << "(" << tuple[0] << ",";
-      for (int i = 1; i < Dim - 1; ++i) {
-         output.emplace_back( tuple[i] );
-         std::cout << tuple[i] << ",";
-      }
-      output.emplace_back( tuple[Dim - 1] );
+      for (int i = 1; i < Dim - 1; ++i) std::cout << tuple[i] << ",";
       std::cout << tuple[Dim - 1] << ")\n";
 
-      if (kd_nodes[index].LeftChildIndex >= 0) print( output, kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
+      if (kd_nodes[index].LeftChildIndex >= 0) print( kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
    }
 
-   void KdtreeCUDA::print(std::vector<node_type>& output) const
+   void KdtreeCUDA::print() const
    {
       if (RootNode < 0 || Coordinates == nullptr) return;
 
@@ -2322,7 +2312,54 @@ namespace cuda
          }
       }
 
-      print( output, kd_nodes, RootNode, 0 );
+      print( kd_nodes, RootNode, 0 );
+   }
+
+   void KdtreeCUDA::getResult(
+      std::vector<node_type>& output,
+      const std::vector<KdtreeNode>& kd_nodes,
+      int index,
+      int depth
+   ) const
+   {
+      if (kd_nodes[index].RightChildIndex >= 0) getResult( output, kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+
+      const node_type* tuple = Coordinates + kd_nodes[index].Index * Dim;
+      output.emplace_back( tuple[0] );
+      for (int i = 1; i < Dim - 1; ++i) output.emplace_back( tuple[i] );
+      output.emplace_back( tuple[Dim - 1] );
+
+      if (kd_nodes[index].LeftChildIndex >= 0) getResult( output, kd_nodes, kd_nodes[index].LeftChildIndex, depth + 1 );
+   }
+
+   void KdtreeCUDA::getResult(std::vector<node_type>& output) const
+   {
+      if (RootNode < 0 || Coordinates == nullptr) return;
+
+      std::vector<KdtreeNode> kd_nodes(TupleNum);
+      const int size_per_device = TupleNum / DeviceNum;
+      for (int i = 0; i < DeviceNum; ++i) {
+         setDevice( Devices[i].ID );
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               kd_nodes.data() + i * size_per_device, Devices[i].Root, sizeof( KdtreeNode ) * size_per_device,
+               cudaMemcpyDeviceToHost, Devices[i].Stream
+            )
+         );
+      }
+
+      if (DeviceNum > 1) {
+         kd_nodes[RootNode].LeftChildIndex = Devices[0].RootNode;
+         kd_nodes[RootNode].RightChildIndex = Devices[1].RootNode;
+         kd_nodes[RootNode].Index = RootNode;
+         for (int i = size_per_device; i < TupleNum; ++i) {
+            if (kd_nodes[i].LeftChildIndex >= 0) kd_nodes[i].LeftChildIndex += size_per_device;
+            if (kd_nodes[i].RightChildIndex >= 0) kd_nodes[i].RightChildIndex += size_per_device;
+            if (kd_nodes[i].Index >= 0) kd_nodes[i].Index += size_per_device;
+         }
+      }
+
+      getResult( output, kd_nodes, RootNode, 0 );
    }
 }
 #endif
