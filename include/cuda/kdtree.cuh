@@ -66,8 +66,6 @@ namespace cuda
       void getResult(std::vector<node_type>& output) const;
 
    private:
-      inline static int DeviceNum = 0;
-
       struct SortGPU
       {
          int MaxSampleNum;
@@ -75,16 +73,15 @@ namespace cuda
          int* RightRanks;
          int* LeftLimits;
          int* RightLimits;
-         int* MergePath;
          int* Reference;
          node_type* Buffer;
 
          SortGPU() :
             MaxSampleNum( 0 ), LeftRanks( nullptr ), RightRanks( nullptr ), LeftLimits( nullptr ),
-            RightLimits( nullptr ), MergePath( nullptr ), Reference( nullptr ), Buffer( nullptr ) {}
+            RightLimits( nullptr ), Reference( nullptr ), Buffer( nullptr ) {}
       };
 
-      struct Device
+      struct CUDADevice
       {
          int ID;
          int TupleNum;
@@ -101,7 +98,7 @@ namespace cuda
          int* NodeSums;
          std::array<int*, 2> MidReferences;
 
-         Device() :
+         CUDADevice() :
             ID( -1 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( nullptr ), Stream( nullptr ), SyncEvent( nullptr ),
             CoordinatesDevicePtr( nullptr ), LeftChildNumInWarp( nullptr ), RightChildNumInWarp( nullptr ),
             NodeSums( nullptr ), MidReferences{} {}
@@ -112,37 +109,18 @@ namespace cuda
       int TupleNum;
       int NodeNum;
       int RootNode;
-      std::vector<Device> Devices;
+      CUDADevice Device;
 
-      static void setDevice(int device_id) { CHECK_CUDA( cudaSetDevice( device_id ) ); }
-      void sync() const { for (auto& device : Devices) CHECK_CUDA( cudaStreamSynchronize( device.Stream ) ); }
-      [[nodiscard]] static bool isP2PCapable(const cudaDeviceProp& properties)
-      {
-         return properties.major >= 2; // Only boards based on Fermi can support P2P
-      }
       void prepareCUDA();
-      void initialize(Device& device, const node_type* coordinates, int size);
-      void initializeReference(Device& device, int size, int axis) const;
-      void sortByAxis(Device& device, int size, int axis) const;
-      [[nodiscard]] int swapBalanced(int source_index, int start_offset, int size, int axis);
-      void mergeSwap(Device& device, int source_index, int target_index, int merge_point, int size) const;
-      [[nodiscard]] int removeDuplicates(
-         Device& device,
-         int source_index,
-         int target_index,
-         int size,
-         int axis,
-         Device* other_device = nullptr,
-         int other_size = 0
-      ) const;
-      void fillUp(Device& device, int size) const;
-      static void copyReferenceAndBuffer(Device& device, int source_index, int target_index, int size);
-      static void copyReference(Device& device, int source_index, int target_index, int size);
+      void initialize(const node_type* coordinates, int size);
+      void initializeReference(int axis);
+      void sortByAxis(int axis);
+      [[nodiscard]] int removeDuplicates(int axis) const;
       void sort(std::vector<int>& end);
-      void partitionDimension(Device& device, int axis, int depth) const;
-      static void partitionDimensionFinal(Device& device, int axis, int depth);
+      void partitionDimension(int axis, int depth);
+      void partitionDimensionFinal(int axis, int depth);
       void build();
-      [[nodiscard]] int verify(Device& device, int start_axis) const;
+      [[nodiscard]] int verify(int start_axis) const;
       [[nodiscard]] int verify();
       void create();
       void print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;
