@@ -1,11 +1,11 @@
 #include "kdtree.h"
 #include "cuda/kdtree.cuh"
 
-void testMultithreading(const std::vector<glm::vec3>& coordinates)
+void testMultithreading(std::vector<float>& nodes, const std::vector<glm::vec3>& coordinates)
 {
    std::cout << "\n================ MultiThreading Test ================\n";
    Kdtree kdtree(coordinates);
-   kdtree.print();
+   kdtree.print( nodes );
 
    constexpr float search_radius = 2.0f;
    const glm::vec3 query(4.0f, 3.0f, 1.0f);
@@ -36,37 +36,45 @@ void testMultithreading(const std::vector<glm::vec3>& coordinates)
 }
 
 #ifdef USE_CUDA
-void testCUDA(const std::vector<glm::vec3>& coordinates)
+void testCUDA(std::vector<float>& nodes, const std::vector<glm::vec3>& coordinates)
 {
    std::cout << "\n================ CUDA Test ================\n";
    cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), static_cast<int>(coordinates.size()), 3);
-   kdtree.print();
+   kdtree.print( nodes );
 }
 #endif
 
 int main()
 {
-   const std::vector<glm::vec3> coordinates = {
-      { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
-      { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
-      { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
-      { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
-      { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
-   };
-   //constexpr int n = 1024 * 16;
-   //std::vector<glm::vec3> coordinates;
-   //for (int i = 0; i < n; ++i) {
-   //   coordinates.emplace_back(
-   //      getRandomValue( 0.0f, 100.0f ),
-   //      getRandomValue( 0.0f, 100.0f ),
-   //      getRandomValue( 0.0f, 100.0f )
-   //   );
-   //}
+   //const std::vector<glm::vec3> coordinates = {
+   //   { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
+   //   { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
+   //   { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
+   //   { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
+   //   { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
+   //};
+   constexpr int n = 1024 * 16;
+   std::vector<glm::vec3> coordinates;
+   for (int i = 0; i < n; ++i) {
+      coordinates.emplace_back(
+         getRandomValue( 0.0f, 100.0f ),
+         getRandomValue( 0.0f, 100.0f ),
+         getRandomValue( 0.0f, 100.0f )
+      );
+   }
 
-   testMultithreading( coordinates );
+   std::vector<float> mt_output;
+   testMultithreading( mt_output, coordinates );
 
 #ifdef USE_CUDA
-   testCUDA( coordinates );
+   std::vector<float> cuda_output;
+   testCUDA( cuda_output, coordinates );
+
+   assert( mt_output.size() == cuda_output.size() );
+   for (size_t i = 0; i < mt_output.size(); ++i) {
+      assert( mt_output[i] == cuda_output[i] );
+   }
+   std::cout << " ====================== Correct Kd-Tree! ======================\n";
 #endif
    return 0;
 }

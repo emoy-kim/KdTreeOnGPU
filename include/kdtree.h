@@ -50,7 +50,7 @@ public:
    explicit Kdtree(const std::vector<TVec>& vertices, int thread_num = 8);
    ~Kdtree() = default;
 
-   void print() const { if (Root != nullptr) print( Root.get(), 0 ); }
+   void print(std::vector<T>& output) const { if (Root != nullptr) print( output, Root.get(), 0 ); }
    [[nodiscard]] std::list<const KdtreeNode*> search(const TVec& query, T search_radius) const
    {
       std::list<const KdtreeNode*> found;
@@ -149,7 +149,7 @@ private:
       const TVec& query,
       int depth
    ) const;
-   void print(KdtreeNode* node, int depth) const;
+   void print(std::vector<T>& output, KdtreeNode* node, int depth) const;
 };
 
 template class Kdtree<float, 3>;
