@@ -1,11 +1,12 @@
 #include "kdtree.h"
 #include "cuda/kdtree.cuh"
 
-void testMultithreading(std::vector<float>& nodes, const std::vector<glm::vec3>& coordinates)
+void testMultithreading(std::vector<float>& output, const std::vector<glm::vec3>& coordinates, bool print_result)
 {
    std::cout << "\n================ MultiThreading Test ================\n";
    Kdtree kdtree(coordinates);
-   kdtree.print( nodes );
+   if (print_result) kdtree.print();
+   kdtree.getResult( output );
 
    constexpr float search_radius = 2.0f;
    const glm::vec3 query(4.0f, 3.0f, 1.0f);
@@ -36,11 +37,12 @@ void testMultithreading(std::vector<float>& nodes, const std::vector<glm::vec3>&
 }
 
 #ifdef USE_CUDA
-void testCUDA(std::vector<float>& nodes, const std::vector<glm::vec3>& coordinates)
+void testCUDA(std::vector<float>& output, const std::vector<glm::vec3>& coordinates, bool print_result)
 {
    std::cout << "\n================ CUDA Test ================\n";
    cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), static_cast<int>(coordinates.size()), 3);
-   kdtree.print( nodes );
+   if (print_result) kdtree.print();
+   kdtree.getResult( output );
 }
 #endif
 
@@ -53,7 +55,7 @@ int main()
    //   { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
    //   { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
    //};
-   constexpr int n = 1024 * 16;
+   constexpr int n = 1024 * 32;
    std::vector<glm::vec3> coordinates;
    for (int i = 0; i < n; ++i) {
       coordinates.emplace_back(
@@ -63,12 +65,14 @@ int main()
       );
    }
 
+   const bool print_result = false;
+
    std::vector<float> mt_output;
-   testMultithreading( mt_output, coordinates );
+   testMultithreading( mt_output, coordinates, print_result );
 
 #ifdef USE_CUDA
    std::vector<float> cuda_output;
-   testCUDA( cuda_output, coordinates );
+   testCUDA( cuda_output, coordinates, print_result );
 
    assert( mt_output.size() == cuda_output.size() );
    for (size_t i = 0; i < mt_output.size(); ++i) {

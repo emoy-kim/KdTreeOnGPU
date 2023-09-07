@@ -650,21 +650,29 @@ void Kdtree<T, dim>::findNearestNeighbors(
 }
 
 template<typename T, int dim>
-void Kdtree<T, dim>::print(std::vector<T>& output, KdtreeNode* node, int depth) const
+void Kdtree<T, dim>::print(KdtreeNode* node, int depth) const
 {
-   if (node->RightChild != nullptr) print( output, node->RightChild.get(), depth + 1 );
+   if (node->RightChild != nullptr) print( node->RightChild.get(), depth + 1 );
 
 	for (int i = 0; i < depth; ++i) std::cout << "       ";
 
    const T* tuple = node->Tuple;
-   output.emplace_back( tuple[0] );
    std::cout << "(" << tuple[0] << ",";
-   for (int i = 1; i < dim - 1; ++i) {
-      output.emplace_back( tuple[i] );
-      std::cout << tuple[i] << ",";
-   }
-   output.emplace_back( tuple[dim - 1] );
+   for (int i = 1; i < dim - 1; ++i) std::cout << tuple[i] << ",";
    std::cout << tuple[dim - 1] << ")\n";
 
-	if (node->LeftChild != nullptr) print( output, node->LeftChild.get(), depth + 1 );
+	if (node->LeftChild != nullptr) print( node->LeftChild.get(), depth + 1 );
+}
+
+template<typename T, int dim>
+void Kdtree<T, dim>::getResult(std::vector<T>& output, KdtreeNode* node, int depth) const
+{
+   if (node->RightChild != nullptr) getResult( output, node->RightChild.get(), depth + 1 );
+
+   const T* tuple = node->Tuple;
+   output.emplace_back( tuple[0] );
+   for (int i = 1; i < dim - 1; ++i) output.emplace_back( tuple[i] );
+   output.emplace_back( tuple[dim - 1] );
+
+	if (node->LeftChild != nullptr) getResult( output, node->LeftChild.get(), depth + 1 );
 }
