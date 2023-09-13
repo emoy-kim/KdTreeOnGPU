@@ -43,6 +43,23 @@ void testCUDA(std::vector<float>& output, const std::vector<glm::vec3>& coordina
    cuda::KdtreeCUDA kdtree(glm::value_ptr( coordinates[0] ), static_cast<int>(coordinates.size()), 3);
    if (print_result) kdtree.print();
    kdtree.getResult( output );
+
+   constexpr float search_radius = 2.0f;
+   const glm::vec3 query(4.0f, 3.0f, 1.0f);
+
+   auto start_time = std::chrono::system_clock::now();
+   const auto list = kdtree.search( glm::value_ptr( query ), search_radius );
+   auto end_time = std::chrono::system_clock::now();
+   const auto search_time =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
+   std::cout << "\n>> " << list.size() << " nodes within " << search_radius << " units of (" <<
+      query.x << ", " << query.y << ", " << query.z << ") in all dimensions, Search Time: " << search_time << "\n";
+   std::cout << ">> List of k-d nodes within " << search_radius << "-unit search radius\n   ";
+   for (const auto& n : list) {
+      const glm::vec3& p = coordinates[n->Index];
+      std::cout << "(" << p.x << ", " << p.y << ", " << p.z << ") ";
+   }
+   std::cout << "\n";
 }
 #endif
 

@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <cassert>
 #include <sstream>
+#include <list>
 #include <array>
 #include <vector>
 #include <algorithm>
@@ -63,6 +64,7 @@ namespace cuda
 
       void print() const;
       void getResult(std::vector<node_type>& output) const;
+      [[nodiscard]] std::list<const KdtreeNode*> search(const node_type* query, node_type search_radius) const;
 
    private:
       struct SortGPU

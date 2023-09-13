@@ -1508,7 +1508,7 @@ namespace cuda
    void KdtreeCUDA::create()
    {
       initialize( Coordinates, TupleNum );
-      CHECK_CUDA( cudaDeviceSynchronize() );
+      CHECK_CUDA( cudaStreamSynchronize( Device.Stream ) );
 
       auto start_time = std::chrono::system_clock::now();
       std::vector<int> end(Dim);
@@ -1577,7 +1577,9 @@ namespace cuda
       int depth
    ) const
    {
-      if (kd_nodes[index].RightChildIndex >= 0) getResult( output, kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+      if (kd_nodes[index].RightChildIndex >= 0) {
+         getResult( output, kd_nodes, kd_nodes[index].RightChildIndex, depth + 1 );
+      }
 
       const node_type* tuple = Coordinates + kd_nodes[index].Index * Dim;
       output.emplace_back( tuple[0] );
@@ -1599,6 +1601,15 @@ namespace cuda
       );
 
       getResult( output, kd_nodes, RootNode, 0 );
+   }
+
+   std::list<const KdtreeNode*> KdtreeCUDA::search(const node_type* query, node_type search_radius) const
+   {
+      if (RootNode < 0 || Coordinates == nullptr) return {};
+
+      std::list<const KdtreeNode*> found;
+
+      return found;
    }
 }
 #endif
