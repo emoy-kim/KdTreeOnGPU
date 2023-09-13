@@ -853,45 +853,6 @@ namespace cuda
       return num;
    }
 
-   __device__
-   void copyWarp(
-      int* target_reference,
-      node_type* target_buffer,
-      const int* source_reference,
-      const node_type* source_buffer,
-      int size
-   )
-   {
-      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const int warp_lane = index & (warpSize - 1);
-      for (int i = warp_lane; i < size; i += warpSize) {
-         target_buffer[i] = source_buffer[i];
-         target_reference[i] = source_reference[i];
-      }
-   }
-
-   __global__
-   void cuCopyReferenceAndBuffer(
-      int* target_reference,
-      node_type* target_buffer,
-      const int* source_reference,
-      const node_type* source_buffer,
-      int segment_size,
-      int size
-   )
-   {
-      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-      const int thread_index = index & (warpSize - 1);
-      const int warp_index = (index - thread_index) / warpSize;
-      const int start_segment = warp_index * segment_size;
-      if (start_segment + segment_size > size) segment_size = size - start_segment;
-
-      copyWarp(
-         target_reference + start_segment, target_buffer + start_segment,
-         source_reference + start_segment, source_buffer + start_segment, segment_size
-      );
-   }
-
    void KdtreeCUDA::sort(std::vector<int>& end)
    {
       const int max_sample_num = TupleNum / SampleStride + 1;
