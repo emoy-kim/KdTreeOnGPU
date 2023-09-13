@@ -494,19 +494,19 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
    for (int i = 1; i <= dim; ++i) references[i] = new const T*[size];
    references[0] = coordinates.data();
 
-   auto start_time = std::chrono::system_clock::now();
+   auto start_time = std::chrono::steady_clock::now();
    sortReferenceAscending( references[0], references[dim], 0, size - 1, 0, 0 );
-   auto end_time = std::chrono::system_clock::now();
+   auto end_time = std::chrono::steady_clock::now();
    const auto sort_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-   start_time = std::chrono::system_clock::now();
+   start_time = std::chrono::steady_clock::now();
    const int end = removeDuplicates( references[0], size );
-   end_time = std::chrono::system_clock::now();
+   end_time = std::chrono::steady_clock::now();
    const auto remove_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-   start_time = std::chrono::system_clock::now();
+   start_time = std::chrono::steady_clock::now();
    int max_depth = 1, s = size;
    while (s > 0) {
       max_depth++;
@@ -522,14 +522,14 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
       std::swap( indices[dim - 1], indices[dim] );
    }
    Root = build( references, permutation, 0, end, 0 );
-   end_time = std::chrono::system_clock::now();
+   end_time = std::chrono::steady_clock::now();
    const auto build_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-   start_time = std::chrono::system_clock::now();
+   start_time = std::chrono::steady_clock::now();
    createPermutation( Permutation, size );
    NodeNum = verify( Root.get(), 0 );
-   end_time = std::chrono::system_clock::now();
+   end_time = std::chrono::steady_clock::now();
    const auto verify_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 

@@ -64,7 +64,7 @@ namespace cuda
 
       void print() const;
       void getResult(std::vector<node_type>& output) const;
-      [[nodiscard]] std::list<const KdtreeNode*> search(const node_type* query, node_type search_radius) const;
+      [[nodiscard]] std::list<int> search(const node_type* query, node_type search_radius) const;
 
    private:
       struct SortGPU

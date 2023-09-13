@@ -1510,10 +1510,10 @@ namespace cuda
       initialize( Coordinates, TupleNum );
       CHECK_CUDA( cudaStreamSynchronize( Device.Stream ) );
 
-      auto start_time = std::chrono::system_clock::now();
+      auto start_time = std::chrono::steady_clock::now();
       std::vector<int> end(Dim);
       sort( end );
-      auto end_time = std::chrono::system_clock::now();
+      auto end_time = std::chrono::steady_clock::now();
       const auto sort_time =
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
@@ -1522,15 +1522,15 @@ namespace cuda
          for (int j = i + 1; j < Dim; ++j) assert( end[i] == end[j] );
       }
 
-      start_time = std::chrono::system_clock::now();
+      start_time = std::chrono::steady_clock::now();
       build();
-      end_time = std::chrono::system_clock::now();
+      end_time = std::chrono::steady_clock::now();
       const auto build_time =
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-      start_time = std::chrono::system_clock::now();
+      start_time = std::chrono::steady_clock::now();
       NodeNum = verify();
-      end_time = std::chrono::system_clock::now();
+      end_time = std::chrono::steady_clock::now();
       const auto verify_time =
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
@@ -1603,11 +1603,11 @@ namespace cuda
       getResult( output, kd_nodes, RootNode, 0 );
    }
 
-   std::list<const KdtreeNode*> KdtreeCUDA::search(const node_type* query, node_type search_radius) const
+   std::list<int> KdtreeCUDA::search(const node_type* query, node_type search_radius) const
    {
       if (RootNode < 0 || Coordinates == nullptr) return {};
 
-      std::list<const KdtreeNode*> found;
+      std::list<int> found;
 
       return found;
    }
