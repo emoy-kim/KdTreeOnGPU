@@ -73,7 +73,7 @@ int main()
    //   { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
    //   { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
    //};
-   constexpr int n = 1024 * 1000;
+   constexpr int n = 1024 * 32;
    std::vector<glm::vec3> coordinates;
    for (int i = 0; i < n; ++i) {
       coordinates.emplace_back(
