@@ -1564,13 +1564,64 @@ namespace cuda
       getResult( output, kd_nodes, RootNode, 0 );
    }
 
-   std::list<int> KdtreeCUDA::search(const node_type* query, node_type search_radius) const
+   __global__
+   void cuSearch(
+      int* lists,
+      int* list_lengths,
+      const KdtreeNode* root,
+      const node_type* coordinates,
+      int size,
+      int query_num,
+      int dim
+   )
    {
-      if (RootNode < 0 || Coordinates == nullptr) return {};
 
-      std::list<int> found;
+   }
 
-      return found;
+   void KdtreeCUDA::search(
+      std::vector<std::vector<int>>& founds,
+      const node_type* queries,
+      int query_num,
+      node_type search_radius
+   ) const
+   {
+      if (RootNode < 0 || Coordinates == nullptr) return;
+
+      int* lists;
+      int* list_lengths;
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&lists), sizeof( int ) * Device.TupleNum * query_num ) );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&list_lengths), sizeof( int ) * query_num ) );
+      CHECK_CUDA( cudaMemset( list_lengths, 0, sizeof( int ) * query_num ) );
+
+      const int block_num = divideUp( query_num, ThreadNum );
+      cuSearch<<<block_num, ThreadNum, 0, Device.Stream>>>(
+         lists, list_lengths, Device.Root, Device.CoordinatesDevicePtr, Device.TupleNum, query_num, Dim
+      );
+      CHECK_KERNEL;
+
+      std::vector<int> lengths(query_num);
+      CHECK_CUDA(
+         cudaMemcpyAsync(
+            lengths.data(), list_lengths, sizeof( int ) * query_num, cudaMemcpyDeviceToHost, Device.Stream
+         )
+      );
+
+      founds.clear();
+      founds.resize( query_num );
+      for (int i = 0; i < query_num; ++i) {
+         if (lengths[i] <= 0) continue;
+
+         founds[i].resize( lengths[i] );
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               founds[i].data(), lists + Device.TupleNum * i, sizeof( int ) * lengths[i],
+               cudaMemcpyDeviceToHost, Device.Stream
+            )
+         );
+      }
+
+      CHECK_CUDA( cudaFree( lists ) );
+      CHECK_CUDA( cudaFree( list_lengths ) );
    }
 }
 #endif

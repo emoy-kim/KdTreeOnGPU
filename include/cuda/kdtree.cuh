@@ -64,7 +64,12 @@ namespace cuda
 
       void print() const;
       void getResult(std::vector<node_type>& output) const;
-      [[nodiscard]] std::list<int> search(const node_type* query, node_type search_radius) const;
+      void search(
+         std::vector<std::vector<int>>& founds,
+         const node_type* queries,
+         int query_num,
+         node_type search_radius
+      ) const;
 
    private:
       struct SortGPU
