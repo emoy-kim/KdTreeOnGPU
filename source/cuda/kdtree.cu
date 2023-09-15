@@ -582,6 +582,18 @@ namespace cuda
             CHECK_KERNEL;
             buffer_index ^= 1;
          }
+         if (buffer_index == 0) {
+            CHECK_CUDA(
+               cudaMemcpyAsync(
+                  buffers[1], buffers[0], sizeof( node_type ) * remained_size, cudaMemcpyDeviceToDevice, Device.Stream
+               )
+            );
+            CHECK_CUDA(
+               cudaMemcpyAsync(
+                  references[1], references[0], sizeof( int ) * remained_size, cudaMemcpyDeviceToDevice, Device.Stream
+               )
+            );
+         }
       }
 
       for (int sorted_size = SharedSize; sorted_size < TupleNum; sorted_size <<= 1) {
@@ -1583,6 +1595,7 @@ namespace cuda
       const node_type* queries,
       node_type search_radius,
       int node_index,
+      int size,
       int dim,
       int mask
    )
@@ -1595,6 +1608,7 @@ namespace cuda
       const KdtreeNode* visit_list[2][WarpSize];
       mask_list[list_ptr][0] = mask;
       visit_list[list_ptr][0] = &root[node_index];
+      visit_list[list_ptr][1] = nullptr;
       while (visit_list[list_ptr][0] != nullptr) {
          int child_num = 0;
          const int axis = depth % dim;
@@ -1612,7 +1626,7 @@ namespace cuda
                   }
                }
                if (inside) {
-                  lists[list_lengths[index]] = visit_list[list_ptr][i]->Index;
+                  lists[index * size + list_lengths[index]] = visit_list[list_ptr][i]->Index;
                   list_lengths[index]++;
                }
 
@@ -1624,15 +1638,15 @@ namespace cuda
 
             const int left_mask = static_cast<int>(__ballot_sync( 0xffffffff, search_left ));
             if (__popc( left_mask ) != 0) {
-               const int left = search_left ? visit_list[list_ptr][i]->LeftChildIndex : 0;
                mask_list[list_ptr ^ 1][child_num] = left_mask;
-               visit_list[list_ptr ^ 1][child_num++] = &root[left];
+               visit_list[list_ptr ^ 1][child_num++] = visit_list[list_ptr][i]->LeftChildIndex >= 0 ?
+                  &root[visit_list[list_ptr][i]->LeftChildIndex] : &root[node_index];
             }
             const int right_mask = static_cast<int>(__ballot_sync( 0xffffffff, search_right ));
             if (__popc( right_mask ) != 0) {
-               const int right = search_right ? visit_list[list_ptr][i]->RightChildIndex : 0;
                mask_list[list_ptr ^ 1][child_num] = right_mask;
-               visit_list[list_ptr ^ 1][child_num++] = &root[right];
+               visit_list[list_ptr ^ 1][child_num++] = visit_list[list_ptr][i]->RightChildIndex >= 0 ?
+                  &root[visit_list[list_ptr][i]->RightChildIndex] : &root[node_index];
             }
          }
          depth++;
@@ -1651,6 +1665,7 @@ namespace cuda
       node_type search_radius,
       int node_index,
       int query_num,
+      int size,
       int dim
    )
    {
@@ -1660,7 +1675,7 @@ namespace cuda
          const int mask = static_cast<int>(__ballot_sync( 0xffffffff, index < query_num ));
          if (__popc( mask ) == 0) break;
 
-         findQuery( lists, list_lengths, root, coordinates, queries, search_radius, node_index, dim, mask );
+         findQuery( lists, list_lengths, root, coordinates, queries, search_radius, node_index, size, dim, mask );
          index += step;
       }
    }
@@ -1674,7 +1689,7 @@ namespace cuda
    {
       if (RootNode < 0 || Coordinates == nullptr) return;
 
-      assert( static_cast<int>(std::floor( std::log2( static_cast<double>(Device.TupleNum) ) )) <= WarpSize );
+      assert( static_cast<int>(std::floor( std::log2( static_cast<double>(Device.TupleNum) ) )) < WarpSize );
 
       int* lists = nullptr;
       int* list_lengths = nullptr;
@@ -1691,11 +1706,10 @@ namespace cuda
          )
       );
 
-      const int block_num = ThreadNum < query_num ? divideUp( query_num, ThreadNum ) : divideUp( query_num, WarpSize );
-      const int thread_num_per_block = ThreadNum < query_num ? ThreadNum : WarpSize;
-      cuSearch<<<block_num, thread_num_per_block, 0, Device.Stream>>>(
+      cuSearch<<<divideUp( query_num, WarpSize ), WarpSize, 0, Device.Stream>>>(
          lists, list_lengths,
-         Device.Root, Device.CoordinatesDevicePtr, device_queries, search_radius, Device.RootNode, query_num, Dim
+         Device.Root, Device.CoordinatesDevicePtr, device_queries,
+         search_radius, Device.RootNode, query_num, Device.TupleNum, Dim
       );
       CHECK_KERNEL;
 
