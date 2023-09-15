@@ -1,3 +1,9 @@
+/*
+ * Author: Jeesun Kim
+ * E-mail: emoy.kim_AT_gmail.com
+ *
+ */
+
 #include "kdtree.h"
 #include "cuda/kdtree.cuh"
 
@@ -70,23 +76,23 @@ void testCUDA(std::vector<float>& output, const std::vector<glm::vec3>& coordina
 int main()
 {
    auto start_time = std::chrono::steady_clock::now();
-   const std::vector<glm::vec3> coordinates = {
-      { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
-      { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
-      { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
-      { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
-      { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
-   };
-   //constexpr int n = 1024 * 32;
-   //std::vector<glm::vec3> coordinates;
-   //coordinates.reserve( n );
-   //for (int i = 0; i < n; ++i) {
-   //   coordinates.emplace_back(
-   //      getRandomValue( 0.0f, 100.0f ),
-   //      getRandomValue( 0.0f, 100.0f ),
-   //      getRandomValue( 0.0f, 100.0f )
-   //   );
-   //}
+   //const std::vector<glm::vec3> coordinates = {
+   //   { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
+   //   { 7.0f, 2.0f, 6.0f }, { 9.0f, 4.0f, 1.0f }, { 8.0f, 4.0f, 2.0f }, { 9.0f, 7.0f, 8.0f }, { 6.0f, 3.0f, 1.0f },
+   //   { 3.0f, 4.0f, 5.0f }, { 1.0f, 6.0f, 8.0f }, { 9.0f, 5.0f, 3.0f }, { 2.0f, 1.0f, 3.0f }, { 8.0f, 7.0f, 6.0f },
+   //   { 5.0f, 4.0f, 2.0f }, { 6.0f, 3.0f, 1.0f }, { 8.0f, 7.0f, 6.0f }, { 9.0f, 6.0f, 7.0f }, { 2.0f, 1.0f, 3.0f },
+   //   { 7.0f, 2.0f, 6.0f }, { 4.0f, 7.0f, 9.0f }, { 1.0f, 6.0f, 8.0f }, { 3.0f, 4.0f, 5.0f }, { 9.0f, 4.0f, 1.0f }
+   //};
+   constexpr int n = 1024 * 32;
+   std::vector<glm::vec3> coordinates;
+   coordinates.reserve( n );
+   for (int i = 0; i < n; ++i) {
+      coordinates.emplace_back(
+         getRandomValue( 0.0f, 100.0f ),
+         getRandomValue( 0.0f, 100.0f ),
+         getRandomValue( 0.0f, 100.0f )
+      );
+   }
    auto end_time = std::chrono::steady_clock::now();
    const auto generation_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;

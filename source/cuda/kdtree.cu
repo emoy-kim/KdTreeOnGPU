@@ -50,8 +50,7 @@ namespace cuda
    {
       int device_num = 0;
       CHECK_CUDA( cudaGetDeviceCount( &device_num ) );
-
-      assert( device_num > 0 );
+      if( device_num <= 0 ) throw std::runtime_error( "cuda device not found\n" );
 
       Device.ID = 0;
       Device.Buffer.resize( Dim + 2, nullptr );
@@ -147,12 +146,23 @@ namespace cuda
    __device__
    node_type compareSuperKey(const node_type* a, const node_type* b, int axis, int dim)
    {
-      node_type difference = 0;
-      for (int i = 0; i < dim; ++i) {
+      node_type difference = a[axis] - b[axis];
+      for (int i = 1; difference == 0 && i < dim; ++i) {
          int r = i + axis;
          r = r < dim ? r : r - dim;
          difference = a[r] - b[r];
-         if (difference != 0) break;
+      }
+      return difference;
+   }
+
+   __device__
+   node_type compareSuperKey(const node_type* a, const node_type* b, node_type delta, int axis, int dim)
+   {
+      node_type difference = a[axis] - (b[axis] + delta);
+      for (int i = 1; difference == 0 && i < dim; ++i) {
+         int r = i + axis;
+         r = r < dim ? r : r - dim;
+         difference = a[r] - (b[r] + delta);
       }
       return difference;
    }
@@ -819,7 +829,7 @@ namespace cuda
       constexpr int segment = total_thread_num / WarpSize;
       const int size_per_warp = divideUp( TupleNum, segment );
 
-      int* unique_num_in_warp;
+      int* unique_num_in_warp = nullptr;
       CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&unique_num_in_warp), sizeof( int ) * segment ) );
       cuRemoveDuplicates<<<block_num, thread_num_per_block, 0, Device.Stream>>>(
          unique_num_in_warp, Device.Sort.Reference, Device.Sort.Buffer,
@@ -846,7 +856,7 @@ namespace cuda
          throw std::runtime_error( buffer.str() );
       }
 
-      int num;
+      int num = 0;
       CHECK_CUDA(
          cudaMemcpyFromSymbolAsync( &num, num_after_removal, sizeof( num ), 0, cudaMemcpyDeviceToHost, Device.Stream )
       );
@@ -1442,7 +1452,7 @@ namespace cuda
       cuSumNodeNum<<<1, ThreadNum, 0, Device.Stream>>>( Device.NodeSums );
       CHECK_KERNEL;
 
-      int node_num;
+      int node_num = 0;
       CHECK_CUDA( cudaMemcpyAsync( &node_num, Device.NodeSums, sizeof( int ), cudaMemcpyDeviceToHost, Device.Stream ) );
       return node_num;
    }
@@ -1564,18 +1574,95 @@ namespace cuda
       getResult( output, kd_nodes, RootNode, 0 );
    }
 
+   __device__
+   void findQuery(
+      int* lists,
+      int* list_lengths,
+      const KdtreeNode* root,
+      const node_type* coordinates,
+      const node_type* queries,
+      node_type search_radius,
+      int node_index,
+      int dim,
+      int mask
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const int warp_lane = index & (warpSize - 1);
+
+      int list_ptr = 0, depth = 0;
+      int mask_list[2][WarpSize];
+      const KdtreeNode* visit_list[2][WarpSize];
+      mask_list[list_ptr][0] = mask;
+      visit_list[list_ptr][0] = &root[node_index];
+      while (visit_list[list_ptr][0] != nullptr) {
+         int child_num = 0;
+         const int axis = depth % dim;
+         for (int i = 0; i < WarpSize && visit_list[list_ptr][i] != nullptr; ++i) {
+            bool search_left = false, search_right = false;
+            const bool active = (mask_list[list_ptr][i] >> warp_lane) & 1;
+            if (active) {
+               bool inside = true;
+               const node_type* query = queries + index * dim;
+               const node_type* node = coordinates + visit_list[list_ptr][i]->Index * dim;
+               for (int d = 0; d < dim; ++d) {
+                  if (query[d] - search_radius > node[d] || query[d] + search_radius < node[d]) {
+                     inside = false;
+                     break;
+                  }
+               }
+               if (inside) {
+                  lists[list_lengths[index]] = visit_list[list_ptr][i]->Index;
+                  list_lengths[index]++;
+               }
+
+               search_left = visit_list[list_ptr][i]->LeftChildIndex >= 0 &&
+                  compareSuperKey( node, query, -search_radius, axis, dim ) >= 0;
+               search_right = visit_list[list_ptr][i]->RightChildIndex >= 0 &&
+                  compareSuperKey( node, query, search_radius, axis, dim ) <= 0;
+            }
+
+            const int left_mask = static_cast<int>(__ballot_sync( 0xffffffff, search_left ));
+            if (__popc( left_mask ) != 0) {
+               const int left = search_left ? visit_list[list_ptr][i]->LeftChildIndex : 0;
+               mask_list[list_ptr ^ 1][child_num] = left_mask;
+               visit_list[list_ptr ^ 1][child_num++] = &root[left];
+            }
+            const int right_mask = static_cast<int>(__ballot_sync( 0xffffffff, search_right ));
+            if (__popc( right_mask ) != 0) {
+               const int right = search_right ? visit_list[list_ptr][i]->RightChildIndex : 0;
+               mask_list[list_ptr ^ 1][child_num] = right_mask;
+               visit_list[list_ptr ^ 1][child_num++] = &root[right];
+            }
+         }
+         depth++;
+         list_ptr ^= 1;
+         visit_list[list_ptr][child_num] = nullptr;
+      }
+   }
+
    __global__
    void cuSearch(
       int* lists,
       int* list_lengths,
       const KdtreeNode* root,
       const node_type* coordinates,
-      int size,
+      const node_type* queries,
+      node_type search_radius,
+      int node_index,
       int query_num,
       int dim
    )
    {
+      auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      while (true) {
+         const int mask = static_cast<int>(__ballot_sync( 0xffffffff, index < query_num ));
+         if (__popc( mask ) == 0) break;
 
+         findQuery( lists, list_lengths, root, coordinates, queries, search_radius, node_index, dim, mask );
+         index += step;
+      }
    }
 
    void KdtreeCUDA::search(
@@ -1587,15 +1674,28 @@ namespace cuda
    {
       if (RootNode < 0 || Coordinates == nullptr) return;
 
-      int* lists;
-      int* list_lengths;
+      assert( static_cast<int>(std::floor( std::log2( static_cast<double>(Device.TupleNum) ) )) <= WarpSize );
+
+      int* lists = nullptr;
+      int* list_lengths = nullptr;
       CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&lists), sizeof( int ) * Device.TupleNum * query_num ) );
       CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&list_lengths), sizeof( int ) * query_num ) );
       CHECK_CUDA( cudaMemset( list_lengths, 0, sizeof( int ) * query_num ) );
 
-      const int block_num = divideUp( query_num, ThreadNum );
-      cuSearch<<<block_num, ThreadNum, 0, Device.Stream>>>(
-         lists, list_lengths, Device.Root, Device.CoordinatesDevicePtr, Device.TupleNum, query_num, Dim
+      node_type* device_queries = nullptr;
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device_queries), sizeof( node_type ) * query_num * Dim ) );
+      CHECK_CUDA(
+         cudaMemcpyAsync(
+            device_queries, queries, sizeof( node_type ) * query_num * Dim,
+            cudaMemcpyHostToDevice, Device.Stream
+         )
+      );
+
+      const int block_num = ThreadNum < query_num ? divideUp( query_num, ThreadNum ) : divideUp( query_num, WarpSize );
+      const int thread_num_per_block = ThreadNum < query_num ? ThreadNum : WarpSize;
+      cuSearch<<<block_num, thread_num_per_block, 0, Device.Stream>>>(
+         lists, list_lengths,
+         Device.Root, Device.CoordinatesDevicePtr, device_queries, search_radius, Device.RootNode, query_num, Dim
       );
       CHECK_KERNEL;
 
@@ -1622,6 +1722,7 @@ namespace cuda
 
       CHECK_CUDA( cudaFree( lists ) );
       CHECK_CUDA( cudaFree( list_lengths ) );
+      CHECK_CUDA( cudaFree( device_queries ) );
    }
 }
 #endif
