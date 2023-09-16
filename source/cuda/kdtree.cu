@@ -1587,6 +1587,60 @@ namespace cuda
    }
 
    __device__
+   void findQueryRecursively(
+      int* lists,
+      int* list_lengths,
+      const KdtreeNode* root,
+      const node_type* coordinates,
+      const node_type* queries,
+      node_type search_radius,
+      int node_index,
+      int query_num,
+      int size,
+      int dim,
+      int depth
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      if (index >= query_num) return;
+
+      bool inside = true;
+      const node_type* query = queries + index * dim;
+      const node_type* node = coordinates + root[node_index].Index * dim;
+      for (int d = 0; d < dim; ++d) {
+         if (query[d] - search_radius > node[d] || query[d] + search_radius < node[d]) {
+            inside = false;
+            break;
+         }
+      }
+      if (inside) {
+         lists[index * size + list_lengths[index]] = root[node_index].Index;
+         list_lengths[index]++;
+      }
+
+      const int axis = depth % dim;
+      const bool search_left = root[node_index].LeftChildIndex >= 0 &&
+         compareSuperKey( node, query, -search_radius, axis, dim ) >= 0;
+      const bool search_right = root[node_index].RightChildIndex >= 0 &&
+         compareSuperKey( node, query, search_radius, axis, dim ) <= 0;
+
+      if (search_left) {
+         findQueryRecursively(
+            lists, list_lengths,
+            root, coordinates, queries,
+            search_radius, root[node_index].LeftChildIndex, query_num, size, dim, depth + 1
+         );
+      }
+      if (search_right) {
+         findQueryRecursively(
+            lists, list_lengths,
+            root, coordinates, queries,
+            search_radius, root[node_index].RightChildIndex, query_num, size, dim, depth + 1
+         );
+      }
+   }
+
+   __device__
    void findQuery(
       int* lists,
       int* list_lengths,
@@ -1602,17 +1656,18 @@ namespace cuda
    {
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const int warp_lane = index & (warpSize - 1);
+      const int max_node_num_in_stack = SharedSize * 8 + 1;
 
       int list_ptr = 0, depth = 0;
-      int mask_list[2][WarpSize];
-      const KdtreeNode* visit_list[2][WarpSize];
+      int mask_list[2][max_node_num_in_stack];
+      const KdtreeNode* visit_list[2][max_node_num_in_stack];
       mask_list[list_ptr][0] = mask;
       visit_list[list_ptr][0] = &root[node_index];
       visit_list[list_ptr][1] = nullptr;
       while (visit_list[list_ptr][0] != nullptr) {
          int child_num = 0;
          const int axis = depth % dim;
-         for (int i = 0; i < WarpSize && visit_list[list_ptr][i] != nullptr; ++i) {
+         for (int i = 0; visit_list[list_ptr][i] != nullptr; ++i) {
             bool search_left = false, search_right = false;
             const bool active = (mask_list[list_ptr][i] >> warp_lane) & 1;
             if (active) {
@@ -1655,6 +1710,7 @@ namespace cuda
       }
    }
 
+   template<bool recursive = false>
    __global__
    void cuSearch(
       int* lists,
@@ -1675,7 +1731,13 @@ namespace cuda
          const int mask = static_cast<int>(__ballot_sync( 0xffffffff, index < query_num ));
          if (__popc( mask ) == 0) break;
 
-         findQuery( lists, list_lengths, root, coordinates, queries, search_radius, node_index, size, dim, mask );
+         if (recursive) {
+            findQueryRecursively(
+               lists, list_lengths,
+               root, coordinates, queries, search_radius, node_index, query_num, size, dim, 0
+            );
+         }
+         else findQuery( lists, list_lengths, root, coordinates, queries, search_radius, node_index, size, dim, mask );
          index += step;
       }
    }
@@ -1688,8 +1750,6 @@ namespace cuda
    ) const
    {
       if (RootNode < 0 || Coordinates == nullptr) return;
-
-      assert( static_cast<int>(std::floor( std::log2( static_cast<double>(Device.TupleNum) ) )) < WarpSize );
 
       int* lists = nullptr;
       int* list_lengths = nullptr;
@@ -1706,12 +1766,31 @@ namespace cuda
          )
       );
 
-      cuSearch<<<divideUp( query_num, WarpSize ), WarpSize, 0, Device.Stream>>>(
-         lists, list_lengths,
-         Device.Root, Device.CoordinatesDevicePtr, device_queries,
-         search_radius, Device.RootNode, query_num, Device.TupleNum, Dim
-      );
-      CHECK_KERNEL;
+      const int max_depth = static_cast<int>(std::log2( static_cast<double>(Device.TupleNum) ));
+      const int max_node_num = std::max( 1 << (max_depth - 1), Device.TupleNum - (1 << max_depth) + 1 );
+      constexpr int max_node_num_in_stack = SharedSize * 8;
+      if (max_node_num <= max_node_num_in_stack) {
+         cuSearch<<<divideUp( query_num, WarpSize ), WarpSize, 0, Device.Stream>>>(
+            lists, list_lengths,
+            Device.Root, Device.CoordinatesDevicePtr, device_queries,
+            search_radius, Device.RootNode, query_num, Device.TupleNum, Dim
+         );
+         CHECK_KERNEL;
+      }
+      else {
+         size_t stack_size = 0;
+         CHECK_CUDA( cudaDeviceGetLimit( &stack_size, cudaLimitStackSize ) );
+         if (stack_size < max_node_num) CHECK_CUDA( cudaDeviceSetLimit( cudaLimitStackSize, max_depth * 120 ) );
+
+         cuSearch<true><<<divideUp( query_num, WarpSize ), WarpSize, 0, Device.Stream>>>(
+            lists, list_lengths,
+            Device.Root, Device.CoordinatesDevicePtr, device_queries,
+            search_radius, Device.RootNode, query_num, Device.TupleNum, Dim
+         );
+         CHECK_KERNEL;
+
+         if (stack_size < max_node_num) CHECK_CUDA( cudaDeviceSetLimit( cudaLimitStackSize, stack_size ) );
+      }
 
       std::vector<int> lengths(query_num);
       CHECK_CUDA(
