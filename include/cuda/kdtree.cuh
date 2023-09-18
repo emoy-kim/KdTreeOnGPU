@@ -70,6 +70,12 @@ namespace cuda
          int query_num,
          node_type search_radius
       ) const;
+      void findNearestNeighbors(
+         std::vector<std::vector<int>>& founds,
+         const node_type* queries,
+         int query_num,
+         int neighbor_num
+      ) const;
 
    private:
       struct SortGPU

@@ -1817,5 +1817,154 @@ namespace cuda
       CHECK_CUDA( cudaFree( list_lengths ) );
       CHECK_CUDA( cudaFree( device_queries ) );
    }
+
+   template<bool use_heap>
+   __device__
+   node_type push(
+      int* lists,
+      int* list_lengths,
+      int node_index,
+      const node_type squared_distance
+   )
+   {
+      if (use_heap) {
+
+      }
+      return 0;
+   }
+
+   template<bool use_heap>
+   __device__
+   void findNearestNeighbors(
+      int* lists,
+      int* list_lengths,
+      const KdtreeNode* root,
+      const node_type* coordinates,
+      const node_type* queries,
+      int node_index,
+      int size,
+      int dim
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+
+      int depth = 0;
+      int curr = node_index;
+      int prev = -1, parent = -1;
+      node_type max_squared_distance = INFINITY;
+      while (true) {
+         if (curr >= size) {
+            prev = curr;
+            curr = parent;
+            continue;
+         }
+
+         const KdtreeNode* node = &root[curr];
+         const bool from_child = prev == root[curr].LeftChildIndex || prev == root[curr].RightChildIndex;
+         if (!from_child) {
+            node_type squared_distance = 0;
+            for (int d = 0; d < dim; ++d) {
+               const node_type x = queries[index * dim + d] - coordinates[node->Index * dim + d];
+               squared_distance += x * x;
+            }
+            max_squared_distance = push<use_heap>( lists, list_lengths, curr, squared_distance );
+         }
+
+         const int axis = depth % dim;
+         const node_type t = queries[index * dim + axis] - coordinates[node->Index * dim + axis];
+         const bool right_priority = t > 0;
+         const int close_child = right_priority ? root[curr].RightChildIndex : root[curr].LeftChildIndex;
+         const int far_child = right_priority ? root[curr].LeftChildIndex : root[curr].RightChildIndex;
+
+         int next = -1;
+         if (prev == close_child) {
+            if (far_child >= 0 && t * t < max_squared_distance) {
+               next = far_child;
+               depth++;
+            }
+            else {
+               next = parent;
+               depth--;
+            }
+         }
+         else if (prev == far_child) {
+            next = parent;
+            depth--;
+         }
+         else {
+            if (root[curr].LeftChildIndex < 0 && root[curr].RightChildIndex < 0) {
+               next = parent;
+               depth--;
+            }
+            else {
+               next = close_child;
+               depth++;
+            }
+         }
+         if (next == -1) return;
+
+         prev = curr;
+         curr = next;
+      }
+   }
+
+   template<bool use_heap = false>
+   __global__
+   void cuFindNearestNeighbors(
+      int* lists,
+      int* list_lengths,
+      const KdtreeNode* root,
+      const node_type* coordinates,
+      const node_type* queries,
+      int node_index,
+      int query_num,
+      int size,
+      int dim
+   )
+   {
+      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+      const auto step = static_cast<int>(blockDim.x * gridDim.x);
+      for (int i = index; i < size; i += step) {
+         if (i >= query_num) break;
+
+         findNearestNeighbors<use_heap>( lists, list_lengths, root, coordinates, queries, node_index, size, dim );
+      }
+   }
+
+   void KdtreeCUDA::findNearestNeighbors(
+      std::vector<std::vector<int>>& founds,
+      const node_type* queries,
+      int query_num,
+      int neighbor_num
+   ) const
+   {
+      if (RootNode < 0 || Coordinates == nullptr) return;
+
+      int* lists = nullptr;
+      int* list_lengths = nullptr;
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&lists), sizeof( int ) * neighbor_num * query_num ) );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&list_lengths), sizeof( int ) * query_num ) );
+      CHECK_CUDA( cudaMemset( list_lengths, 0, sizeof( int ) * query_num ) );
+
+      node_type* device_queries = nullptr;
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&device_queries), sizeof( node_type ) * query_num * Dim ) );
+      CHECK_CUDA(
+         cudaMemcpyAsync(
+            device_queries, queries, sizeof( node_type ) * query_num * Dim,
+            cudaMemcpyHostToDevice, Device.Stream
+         )
+      );
+
+      cuFindNearestNeighbors<<<divideUp( query_num, WarpSize ), WarpSize, 0, Device.Stream>>>(
+         lists, list_lengths,
+         Device.Root, Device.CoordinatesDevicePtr, device_queries,
+         Device.RootNode, query_num, Device.TupleNum, Dim
+      );
+      CHECK_KERNEL;
+
+      CHECK_CUDA( cudaFree( lists ) );
+      CHECK_CUDA( cudaFree( list_lengths ) );
+      CHECK_CUDA( cudaFree( device_queries ) );
+   }
 }
 #endif
