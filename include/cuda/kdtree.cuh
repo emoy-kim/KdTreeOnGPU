@@ -49,11 +49,12 @@ namespace cuda
    struct KdtreeNode
    {
       int Index;
+      int ParentIndex;
       int LeftChildIndex;
       int RightChildIndex;
 
-      KdtreeNode() : Index( -1 ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
-      explicit KdtreeNode(int index) : Index( index ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
+      KdtreeNode() : Index( -1 ), ParentIndex( -1 ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
+      explicit KdtreeNode(int index) : Index( index ), ParentIndex( -1 ), LeftChildIndex( -1 ), RightChildIndex( -1 ) {}
    };
 
    class KdtreeCUDA final
@@ -71,7 +72,7 @@ namespace cuda
          node_type search_radius
       ) const;
       void findNearestNeighbors(
-         std::vector<std::vector<int>>& founds,
+         std::vector<std::vector<std::pair<float, int>>>& founds,
          const node_type* queries,
          int query_num,
          int neighbor_num

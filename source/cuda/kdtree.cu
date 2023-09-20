@@ -1039,6 +1039,7 @@ namespace cuda
          if (last_mid_references != nullptr) {
             if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
             else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+            root[mid_reference].ParentIndex = last_mid_references[m >> 1];
          }
       }
    }
@@ -1149,6 +1150,7 @@ namespace cuda
             if (last_mid_references != nullptr) {
                if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
                else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+               root[mid_reference].ParentIndex = last_mid_references[m >> 1];
             }
          }
       }
@@ -1249,11 +1251,14 @@ namespace cuda
       else if (end == start + 1) {
          mid_reference = primary_reference[start];
          root[mid_reference].RightChildIndex = primary_reference[end];
+         root[root[mid_reference].RightChildIndex].ParentIndex = mid_reference;
       }
       else if (end == start + 2) {
          mid_reference = primary_reference[start + 1];
          root[mid_reference].LeftChildIndex = primary_reference[start];
          root[mid_reference].RightChildIndex = primary_reference[end];
+         root[root[mid_reference].LeftChildIndex].ParentIndex = mid_reference;
+         root[root[mid_reference].RightChildIndex].ParentIndex = mid_reference;
       }
 
       if (mid_reference != -1) {
@@ -1262,6 +1267,7 @@ namespace cuda
          mid_references[m] = mid_reference;
          if (m & 1) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
          else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+         root[mid_reference].ParentIndex = last_mid_references[m >> 1];
       }
    }
 
@@ -1361,6 +1367,7 @@ namespace cuda
                    ) <= 0) {
                   verify_error = 1;
                }
+               if (root[right].ParentIndex != root[node].Index) verify_error = 1;
             }
 
             const int left = root[node].LeftChildIndex;
@@ -1371,6 +1378,7 @@ namespace cuda
                    ) >= 0) {
                   verify_error = 1;
                }
+               if (root[left].ParentIndex != root[node].Index) verify_error = 1;
             }
          }
          else next_child[i * 2] = next_child[i * 2 + 1] = -1;
@@ -1459,6 +1467,11 @@ namespace cuda
             cudaMemcpyFromSymbolAsync( &error, verify_error, sizeof( error ), 0, cudaMemcpyDeviceToHost, Device.Stream )
          );
          CHECK_CUDA( cudaStreamSynchronize( Device.Stream ) );
+         if (error != 0) {
+            std::ostringstream buffer;
+            buffer << "error in verify(): " << error << "\n";
+            throw std::runtime_error( buffer.str() );
+         }
       }
 
       cuSumNodeNum<<<1, ThreadNum, 0, Device.Stream>>>( Device.NodeSums );
@@ -1832,7 +1845,7 @@ namespace cuda
 
    template<bool use_heap>
    __device__
-   float push(uint64_t* lists, int node_index, int neighbor_num, const float squared_distance)
+   float push(uint64_t* lists, int node_index, int neighbor_num, float squared_distance)
    {
       if (use_heap) {
          return 0;
@@ -1840,13 +1853,35 @@ namespace cuda
       else {
          uint64_t value =
             (static_cast<uint64_t>(__float_as_uint( squared_distance )) << 32) | static_cast<uint32_t>(node_index);
+         float s = squared_distance;
+         int t = node_index;
          for (int i = 0; i < neighbor_num; ++i) {
+            /*float d = __uint_as_float( lists[i] >> 32 );
+            int x = static_cast<int>(lists[i] & 0xffffffff);
+            float maxf, minf;
+            int maxi, mini;
+            if (s < d) {
+               maxf = d;
+               maxi = x;
+               minf = s;
+               mini = t;
+            }
+            else {
+               maxf = s;
+               maxi = t;
+               minf = d;
+               mini = x;
+            }
+            lists[i] = (static_cast<uint64_t>(__float_as_uint( minf )) << 32) | static_cast<uint32_t>(mini);
+            s = maxf;
+            t = maxi;*/
+
             const uint64_t max_value = max( lists[i], value );
             const uint64_t min_value = min( lists[i], value );
             lists[i] = min_value;
             value = max_value;
          }
-         return lists[neighbor_num - 1];
+         return __uint_as_float( lists[neighbor_num - 1] >> 32 );
       }
    }
 
@@ -1856,42 +1891,42 @@ namespace cuda
       uint64_t* lists,
       const KdtreeNode* root,
       const node_type* coordinates,
-      const node_type* queries,
+      const node_type* query,
       int node_index,
       int neighbor_num,
       int size,
       int dim
    )
    {
-      const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-
       int depth = 0;
       int curr = node_index;
-      int prev = -1, parent = -1;
+      int prev = -2;
       float max_squared_distance = INFINITY;
-      while (true) {
+
+      while (curr >= 0) {
+         const KdtreeNode* node = &root[curr];
+         const int parent = node->ParentIndex;
          if (curr >= size) {
             prev = curr;
             curr = parent;
             continue;
          }
 
-         const KdtreeNode* node = &root[curr];
-         const bool from_child = prev == root[curr].LeftChildIndex || prev == root[curr].RightChildIndex;
+         const bool from_child = prev >= 0 && (prev == node->LeftChildIndex || prev == node->RightChildIndex);
          if (!from_child) {
-            float squared_distance = 0;
+            float squared_distance = 0.0f;
             for (int d = 0; d < dim; ++d) {
-               const float x = queries[index * dim + d] - coordinates[node->Index * dim + d];
+               const float x = query[d] - coordinates[node->Index * dim + d];
                squared_distance += x * x;
             }
             max_squared_distance = push<use_heap>( lists, curr, neighbor_num, squared_distance );
          }
 
          const int axis = depth % dim;
-         const node_type t = queries[index * dim + axis] - coordinates[node->Index * dim + axis];
+         const node_type t = query[axis] - coordinates[node->Index * dim + axis];
          const bool right_priority = t > 0;
-         const int far_child = right_priority ? root[curr].LeftChildIndex : root[curr].RightChildIndex;
-         const int close_child = right_priority ? root[curr].RightChildIndex : root[curr].LeftChildIndex;
+         const int far_child = right_priority ? node->LeftChildIndex : node->RightChildIndex;
+         const int close_child = right_priority ? node->RightChildIndex : node->LeftChildIndex;
 
          int next = -1;
          if (prev == close_child) {
@@ -1909,7 +1944,7 @@ namespace cuda
             depth--;
          }
          else {
-            if (root[curr].LeftChildIndex < 0 && root[curr].RightChildIndex < 0) {
+            if (close_child < 0 && far_child < 0) {
                next = parent;
                depth--;
             }
@@ -1918,7 +1953,6 @@ namespace cuda
                depth++;
             }
          }
-         if (next == -1) return;
 
          prev = curr;
          curr = next;
@@ -1942,13 +1976,14 @@ namespace cuda
       const auto index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
       const auto step = static_cast<int>(blockDim.x * gridDim.x);
       for (int i = index; i < query_num; i += step) {
-         lists += i * neighbor_num;
-         findNearestNeighbors<use_heap>( lists, root, coordinates, queries, node_index, neighbor_num, size, dim );
+         const node_type* query = queries + i;
+         uint64_t* founds = lists + i * neighbor_num;
+         findNearestNeighbors<use_heap>( founds, root, coordinates, query, node_index, neighbor_num, size, dim );
       }
    }
 
    void KdtreeCUDA::findNearestNeighbors(
-      std::vector<std::vector<int>>& founds,
+      std::vector<std::vector<std::pair<float, int>>>& founds,
       const node_type* queries,
       int query_num,
       int neighbor_num
@@ -1977,6 +2012,27 @@ namespace cuda
          Device.RootNode, query_num, neighbor_num, Device.TupleNum, Dim
       );
       CHECK_KERNEL;
+
+      founds.clear();
+      founds.resize( query_num );
+      std::vector<uint64_t> neighbors(neighbor_num);
+      for (int i = 0; i < query_num; ++i) {
+         CHECK_CUDA(
+            cudaMemcpyAsync(
+               neighbors.data(), lists + i * neighbor_num, sizeof( uint64_t ) * neighbor_num,
+               cudaMemcpyDeviceToHost, Device.Stream
+            )
+         );
+
+         for (int j = 0; j < neighbor_num; ++j) {
+            const auto index = static_cast<int>(neighbors[j] & 0xffffffff);
+            if (index < 0) break;
+
+            const auto float_part = static_cast<int>(neighbors[j] >> 32);
+            const float squared_distance = *reinterpret_cast<const float*>(&float_part);
+            founds[i].emplace_back( squared_distance, index );
+         }
+      }
 
       CHECK_CUDA( cudaFree( lists ) );
       CHECK_CUDA( cudaFree( device_queries ) );

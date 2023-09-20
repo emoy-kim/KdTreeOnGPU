@@ -9,6 +9,7 @@
 
 constexpr bool PrintResult = false;
 constexpr float SearchRadius = 2.0f;
+constexpr int NeighborNum = 5;
 
 void testMultithreading(
    std::vector<float>& output,
@@ -48,17 +49,18 @@ void testMultithreading(
    std::vector<std::forward_list<std::pair<float, const Kdtree<float, 3>::KdtreeNode*>>> nn_founds;
    for (const auto& query : queries) {
       const auto start_time = std::chrono::steady_clock::now();
-      nn_founds.emplace_back( kdtree.findNearestNeighbors( query, 5 ) );
+      nn_founds.emplace_back( kdtree.findNearestNeighbors( query, NeighborNum ) );
       const auto end_time = std::chrono::steady_clock::now();
       nn_search_time +=
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
    }
+   std::cout << ">> Find " << NeighborNum << "-NN\n";
    for (size_t i = 0; i < nn_founds.size(); ++i) {
-      std::cout << "\n>> " << std::distance( nn_founds[i].begin(), nn_founds[i].end() ) << " nearest neighbors of ("
+      std::cout << ">> " << std::distance( nn_founds[i].begin(), nn_founds[i].end() ) << " nearest neighbors of ("
          << queries[i].x << ", " << queries[i].y << ", " << queries[i].z << ") in all dimensions\n";
-      std::cout << ">> List of nearest neighbors\n";
+      std::cout << "\t* List of nearest neighbors\n";
       for (const auto& p : nn_founds[i]) {
-         std::cout << "   (" << p.second->Tuple[0] << ", " << p.second->Tuple[1] << ", " << p.second->Tuple[2]
+         std::cout << "\t  (" << p.second->Tuple[0] << ", " << p.second->Tuple[1] << ", " << p.second->Tuple[2]
             << ") in " << p.first << "\n";
       }
    }
@@ -98,23 +100,23 @@ void testCUDA(
    }
    std::cout << ">> Total Search Time: " << search_time << " sec.\n";*/
 
-   std::vector<std::vector<int>> nn_founds;
+   std::vector<std::vector<std::pair<float,int>>> nn_founds;
    start_time = std::chrono::steady_clock::now();
    kdtree.findNearestNeighbors(
-      nn_founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), SearchRadius
+      nn_founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), NeighborNum
    );
    end_time = std::chrono::steady_clock::now();
    const auto nn_search_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
+   std::cout << ">> Find " << NeighborNum << "-NN\n";
    for (size_t i = 0; i < nn_founds.size(); ++i) {
-      std::cout << "\n>> " << std::distance( nn_founds[i].begin(), nn_founds[i].end() ) << " nearest neighbors of ("
+      std::cout << ">> " << std::distance( nn_founds[i].begin(), nn_founds[i].end() ) << " nearest neighbors of ("
          << queries[i].x << ", " << queries[i].y << ", " << queries[i].z << ") in all dimensions\n";
-      std::cout << ">> List of nearest neighbors\n";
+      std::cout << "\t* List of nearest neighbors\n";
       for (const auto& r : nn_founds[i]) {
-         const glm::vec3& p = coordinates[r];
-         std::cout << "(" << p.x << ", " << p.y << ", " << p.z << ") ";
+         const glm::vec3& p = coordinates[r.second];
+         std::cout << "\t  (" << p.x << ", " << p.y << ", " << p.z << ") in " << r.first << "\n";
       }
-      std::cout << "\n";
    }
    std::cout << ">> Total Nearest Neighbors Search Time: " << nn_search_time << " sec.\n";
 }
@@ -146,7 +148,7 @@ int main()
    std::cout << ">> Coordinates generated: " << generation_time << " sec.\n";
 
    std::vector<glm::vec3> queries;
-   for (int i = 0; i < 10; ++i) {
+   for (int i = 0; i < 2; ++i) {
       queries.emplace_back(
          getRandomValue( 0.0f, 100.0f ),
          getRandomValue( 0.0f, 100.0f ),
