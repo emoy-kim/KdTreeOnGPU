@@ -9,13 +9,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(
 	SOURCE_FILES 
 		main.cpp
-		source/kdtree.cpp
-		source/camera.cpp
-		source/light.cpp
-		source/object.cpp
-		source/renderer.cpp
-		source/shader.cpp
 		source/text.cpp
+		source/light.cpp
+		source/camera.cpp
+		source/shader.cpp
+		source/kdtree_shader.cpp
+		source/kdtree.cpp
+		source/object.cpp
+		source/kdtree_object.cpp
+		source/renderer.cpp
 )
 
 configure_file(include/project_constants.h.in ${PROJECT_BINARY_DIR}/project_constants.h @ONLY)
