@@ -14,11 +14,6 @@ RendererGL::RendererGL() :
    printOpenGLInformation();
 }
 
-RendererGL::~RendererGL()
-{
-
-}
-
 void RendererGL::printOpenGLInformation()
 {
    std::cout << "**************************************************************************\n";
@@ -29,7 +24,7 @@ void RendererGL::printOpenGLInformation()
 
    int work_group_count = 0;
    glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &work_group_count );
-   std::cout << " - OpenGL maximum number of work group: " <<  work_group_count << ", ";
+   std::cout << " - OpenGL maximum number of work groups: " <<  work_group_count << ", ";
    glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &work_group_count );
    std::cout << work_group_count << ", ";
    glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &work_group_count );
@@ -42,6 +37,10 @@ void RendererGL::printOpenGLInformation()
    std::cout << work_group_size << ", ";
    glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &work_group_size );
    std::cout << work_group_size << "\n";
+
+   int max_ssbo_num = 0;
+   glGetIntegerv( GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &max_ssbo_num );
+   std::cout << " - OpenGL maximum number of shader storage blocks: " << max_ssbo_num << "\n";
    std::cout << "**************************************************************************\n\n";
 }
 
@@ -230,16 +229,35 @@ void RendererGL::setShaders() const
    );
    KdtreeBuilder.InitializeReference->setUniformLocations();
 
+   KdtreeBuilder.CopyCoordinates->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/copy_coordinates.comp").c_str()
+   );
+   KdtreeBuilder.CopyCoordinates->setUniformLocations();
+
+}
+
+void RendererGL::sortByAxis(int axis) const
+{
+   glUseProgram( KdtreeBuilder.CopyCoordinates->getShaderProgram() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getBuffer( axis ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( axis ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getCoordinates() );
+   glDispatchCompute( 32, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 }
 
 void RendererGL::sort() const
 {
    Object->prepareSorting();
-   glUseProgram( KdtreeBuilder.InitializeReference->getShaderProgram() );
    KdtreeBuilder.InitializeReference->uniform1i( "Size", Object->getSize() );
-   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( 0 ) );
-   glDispatchCompute( 32, 1, 1 );
-   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+   for (int axis = 0; axis < Object->getDimension(); ++axis) {
+      glUseProgram( KdtreeBuilder.InitializeReference->getShaderProgram() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( axis ) );
+      glDispatchCompute( 32, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+      sortByAxis( axis );
+   }
 
    Object->releaseSorting();
 }

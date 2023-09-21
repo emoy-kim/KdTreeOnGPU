@@ -1,0 +1,20 @@
+#version 460
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer Buffer { float target[]; };
+layout (binding = 1, std430) buffer Reference { int reference[]; };
+layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   for (int i = index; i < Size; i += step) {
+      target[i] = coordinates[reference[i] * Dim + Axis];
+   }
+}

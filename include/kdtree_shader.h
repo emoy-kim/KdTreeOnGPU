@@ -29,3 +29,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class CopyCoordinatesShaderGL final : public ShaderGL
+{
+public:
+   CopyCoordinatesShaderGL() = default;
+   ~CopyCoordinatesShaderGL() override = default;
+
+   CopyCoordinatesShaderGL(const CopyCoordinatesShaderGL&) = delete;
+   CopyCoordinatesShaderGL(const CopyCoordinatesShaderGL&&) = delete;
+   CopyCoordinatesShaderGL& operator=(const CopyCoordinatesShaderGL&) = delete;
+   CopyCoordinatesShaderGL& operator=(const CopyCoordinatesShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

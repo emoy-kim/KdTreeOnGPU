@@ -23,10 +23,12 @@ public:
    void initialize();
    void prepareSorting();
    void releaseSorting();
+   [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getSize() const { return static_cast<int>(Vertices.size()); }
    [[nodiscard]] GLuint getRoot() const { return Root; }
    [[nodiscard]] GLuint getCoordinates() const { return Coordinates; }
    [[nodiscard]] GLuint getReference(int index) const { return Reference[index]; }
+   [[nodiscard]] GLuint getBuffer(int index) const { return Buffer[index]; }
 
 
 private:

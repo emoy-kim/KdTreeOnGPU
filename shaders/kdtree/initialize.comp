@@ -1,0 +1,27 @@
+#version 460
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+struct KdtreeNode
+{
+   int Index;
+   int ParentIndex;
+   int LeftChildIndex;
+   int RightChildIndex;
+};
+
+layout (binding = 0, std430) buffer Root { KdtreeNode root[]; };
+
+uniform int Size;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   for (int i = index; i < Size; i += step) {
+      root[i].Index = i;
+      root[i].ParentIndex = -1;
+      root[i].LeftChildIndex = -1;
+      root[i].RightChildIndex = -1;
+   }
+}

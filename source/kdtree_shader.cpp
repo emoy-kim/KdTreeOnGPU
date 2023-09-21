@@ -9,3 +9,10 @@ void InitializeReferenceShaderGL::setUniformLocations()
 {
    addUniformLocation( "Size" );
 }
+
+void CopyCoordinatesShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+}

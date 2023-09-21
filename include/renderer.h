@@ -16,7 +16,7 @@ class RendererGL final
 {
 public:
    RendererGL();
-   ~RendererGL();
+   ~RendererGL() = default;
 
    RendererGL(const RendererGL&) = delete;
    RendererGL(const RendererGL&&) = delete;
@@ -38,10 +38,12 @@ private:
    {
       std::unique_ptr<InitializeShaderGL> Initialize;
       std::unique_ptr<InitializeReferenceShaderGL> InitializeReference;
+      std::unique_ptr<CopyCoordinatesShaderGL> CopyCoordinates;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
-         InitializeReference( std::make_unique<InitializeReferenceShaderGL>() ) {}
+         InitializeReference( std::make_unique<InitializeReferenceShaderGL>() ),
+         CopyCoordinates( std::make_unique<CopyCoordinatesShaderGL>() ) {}
    };
 
    inline static RendererGL* Renderer = nullptr;
@@ -81,6 +83,7 @@ private:
    void setLights();
    void setObject() const;
    void setShaders() const;
+   void sortByAxis(int axis) const;
    void sort() const;
    void buildKdtree() const;
    void drawObject() const;

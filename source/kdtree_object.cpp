@@ -74,6 +74,9 @@ void KdtreeGL::prepareSorting()
    for (int i = 0; i <= Dim + 1; ++i) {
       Reference[i] = addCustomBufferObject<int>( "Reference", size );
    }
+   for (int i = 0; i <= Dim; ++i) {
+      Buffer[i] = addCustomBufferObject<float>( "Buffer", size );
+   }
 }
 
 void KdtreeGL::releaseSorting()
