@@ -120,7 +120,6 @@ namespace cuda
       const int Dim;
       int TupleNum;
       int NodeNum;
-      int RootNode;
       CUDADevice Device;
 
       void prepareCUDA();

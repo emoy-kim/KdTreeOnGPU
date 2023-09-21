@@ -79,13 +79,13 @@ void testCUDA(
    if (PrintResult) kdtree.print();
    kdtree.getResult( output );
 
-   std::vector<std::vector<int>> founds;
+   /*std::vector<std::vector<int>> founds;
    auto start_time = std::chrono::steady_clock::now();
    kdtree.search( founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), SearchRadius );
    auto end_time = std::chrono::steady_clock::now();
    const auto search_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
-   /*std::cout << ">> Search " << queries.size() << " queries\n";
+   std::cout << ">> Search " << queries.size() << " queries\n";
    for (size_t i = 0; i < founds.size(); ++i) {
       std::cout << ">> [" << i + 1 << "] " << founds[i].size() << " nodes within " << SearchRadius << " units of ("
          << queries[i].x << ", " << queries[i].y << ", " << queries[i].z << ") in all dimensions\n";
@@ -101,11 +101,11 @@ void testCUDA(
    std::cout << ">> Total Search Time: " << search_time << " sec.\n";*/
 
    std::vector<std::vector<std::pair<float,int>>> nn_founds;
-   start_time = std::chrono::steady_clock::now();
+   auto start_time = std::chrono::steady_clock::now();
    kdtree.findNearestNeighbors(
       nn_founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), NeighborNum
    );
-   end_time = std::chrono::steady_clock::now();
+   auto end_time = std::chrono::steady_clock::now();
    const auto nn_search_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
    std::cout << ">> Find " << NeighborNum << "-NN\n";
@@ -148,7 +148,7 @@ int main()
    std::cout << ">> Coordinates generated: " << generation_time << " sec.\n";
 
    std::vector<glm::vec3> queries;
-   for (int i = 0; i < 2; ++i) {
+   for (int i = 0; i < 3; ++i) {
       queries.emplace_back(
          getRandomValue( 0.0f, 100.0f ),
          getRandomValue( 0.0f, 100.0f ),
