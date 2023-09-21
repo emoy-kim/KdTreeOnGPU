@@ -2,10 +2,11 @@
 
 RendererGL::RendererGL() :
    Window( nullptr ), Pause( false ), FrameWidth( 1024 ), FrameHeight( 1024 ), ClickedPoint( -1, -1 ),
-   Texter( std::make_unique<TextGL>() ), MainCamera( std::make_unique<CameraGL>() ),
-   TextCamera( std::make_unique<CameraGL>() ), TextShader( std::make_unique<ShaderGL>() ),
-   SceneShader( std::make_unique<ShaderGL>() ), Lights( std::make_unique<LightGL>() ),
-   Object( std::make_unique<ObjectGL>() )
+   Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ), Object( std::make_unique<KdtreeGL>() ),
+   MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
+   TextShader( std::make_unique<ShaderGL>() ), SceneShader( std::make_unique<ShaderGL>() ),
+   Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder()
+
 {
    Renderer = this;
 
@@ -20,12 +21,28 @@ RendererGL::~RendererGL()
 
 void RendererGL::printOpenGLInformation()
 {
-   std::cout << "****************************************************************\n";
+   std::cout << "**************************************************************************\n";
    std::cout << " - GLFW version supported: " << glfwGetVersionString() << "\n";
    std::cout << " - OpenGL renderer: " << glGetString( GL_RENDERER ) << "\n";
    std::cout << " - OpenGL version supported: " << glGetString( GL_VERSION ) << "\n";
    std::cout << " - OpenGL shader version supported: " << glGetString( GL_SHADING_LANGUAGE_VERSION ) << "\n";
-   std::cout << "****************************************************************\n\n";
+
+   int work_group_count = 0;
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &work_group_count );
+   std::cout << " - OpenGL maximum number of work group: " <<  work_group_count << ", ";
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &work_group_count );
+   std::cout << work_group_count << ", ";
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &work_group_count );
+   std::cout << work_group_count << "\n";
+
+   int work_group_size = 0;
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &work_group_size );
+   std::cout << " - OpenGL maximum work group size: " <<  work_group_size << ", ";
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &work_group_size );
+   std::cout << work_group_size << ", ";
+   glGetIntegeri_v( GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &work_group_size );
+   std::cout << work_group_size << "\n";
+   std::cout << "**************************************************************************\n\n";
 }
 
 void RendererGL::initialize()
@@ -58,16 +75,6 @@ void RendererGL::initialize()
 
    TextCamera->update2DCamera( FrameWidth, FrameHeight );
    MainCamera->updatePerspectiveCamera( FrameWidth, FrameHeight );
-
-   const std::string shader_directory_path = std::string(CMAKE_SOURCE_DIR) + "/shaders";
-   TextShader->setShader(
-      std::string(shader_directory_path + "/text.vert").c_str(),
-      std::string(shader_directory_path + "/text.frag").c_str()
-   );
-   SceneShader->setShader(
-      std::string(shader_directory_path + "/scene_shader.vert").c_str(),
-      std::string(shader_directory_path + "/scene_shader.frag").c_str()
-   );
 }
 
 void RendererGL::writeFrame() const
@@ -189,12 +196,68 @@ void RendererGL::setLights()
 
 void RendererGL::setObject() const
 {
+   std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
    const std::string sample_directory_path = std::string(CMAKE_SOURCE_DIR) + "/samples";
    Object->setObject(
       GL_TRIANGLES,
       std::string(sample_directory_path + "/Bunny/bunny.obj")
    );
    Object->setDiffuseReflectionColor( { 0.3f, 0.3f, 0.5f, 1.0f } );
+   std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+   Timer->ObjectLoad =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
+}
+
+void RendererGL::setShaders() const
+{
+   const std::string shader_directory_path = std::string(CMAKE_SOURCE_DIR) + "/shaders";
+   TextShader->setShader(
+      std::string(shader_directory_path + "/text.vert").c_str(),
+      std::string(shader_directory_path + "/text.frag").c_str()
+   );
+   SceneShader->setShader(
+      std::string(shader_directory_path + "/scene_shader.vert").c_str(),
+      std::string(shader_directory_path + "/scene_shader.frag").c_str()
+   );
+   TextShader->setTextUniformLocations();
+   SceneShader->setSceneUniformLocations( Lights->getTotalLightNum() );
+
+   KdtreeBuilder.Initialize->setComputeShader( std::string(shader_directory_path + "/kdtree/initialize.comp").c_str() );
+   KdtreeBuilder.Initialize->setUniformLocations();
+
+   KdtreeBuilder.InitializeReference->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/initialize_reference.comp").c_str()
+   );
+   KdtreeBuilder.InitializeReference->setUniformLocations();
+
+}
+
+void RendererGL::sort() const
+{
+   Object->prepareSorting();
+   glUseProgram( KdtreeBuilder.InitializeReference->getShaderProgram() );
+   KdtreeBuilder.InitializeReference->uniform1i( "Size", Object->getSize() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( 0 ) );
+   glDispatchCompute( 32, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+   Object->releaseSorting();
+}
+
+void RendererGL::buildKdtree() const
+{
+   Object->initialize();
+   glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );
+   KdtreeBuilder.Initialize->uniform1i( "Size", Object->getSize() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
+   glDispatchCompute( 32, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+   std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
+   sort();
+   std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+   Timer->Sort =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
 }
 
 void RendererGL::drawObject() const
@@ -273,8 +336,8 @@ void RendererGL::play()
 
    setLights();
    setObject();
-   TextShader->setTextUniformLocations();
-   SceneShader->setSceneUniformLocations( Lights->getTotalLightNum() );
+   setShaders();
+   buildKdtree();
 
    while (!glfwWindowShouldClose( Window )) {
       if (!Pause) render();

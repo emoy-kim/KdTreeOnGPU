@@ -9,6 +9,8 @@
 #include "base.h"
 #include "text.h"
 #include "light.h"
+#include "kdtree_object.h"
+#include "kdtree_shader.h"
 
 class RendererGL final
 {
@@ -24,6 +26,24 @@ public:
    void play();
 
 private:
+   struct TimeCheck
+   {
+      double ObjectLoad;
+      double Sort;
+
+      TimeCheck() = default;
+   };
+
+   struct KdtreeBuild
+   {
+      std::unique_ptr<InitializeShaderGL> Initialize;
+      std::unique_ptr<InitializeReferenceShaderGL> InitializeReference;
+
+      KdtreeBuild() :
+         Initialize( std::make_unique<InitializeShaderGL>() ),
+         InitializeReference( std::make_unique<InitializeReferenceShaderGL>() ) {}
+   };
+
    inline static RendererGL* Renderer = nullptr;
    GLFWwindow* Window;
    bool Pause;
@@ -31,12 +51,14 @@ private:
    int FrameHeight;
    glm::ivec2 ClickedPoint;
    std::unique_ptr<TextGL> Texter;
+   std::unique_ptr<LightGL> Lights;
+   std::unique_ptr<KdtreeGL> Object;
    std::unique_ptr<CameraGL> MainCamera;
    std::unique_ptr<CameraGL> TextCamera;
    std::unique_ptr<ShaderGL> TextShader;
    std::unique_ptr<ShaderGL> SceneShader;
-   std::unique_ptr<LightGL> Lights;
-   std::unique_ptr<ObjectGL> Object;
+   std::unique_ptr<TimeCheck> Timer;
+   KdtreeBuild KdtreeBuilder;
 
    // 16 and 32 do well, anything in between or below is bad.
    // 32 seems to do well on laptop/desktop Windows Intel and on NVidia/AMD as well.
@@ -58,6 +80,9 @@ private:
 
    void setLights();
    void setObject() const;
+   void setShaders() const;
+   void sort() const;
+   void buildKdtree() const;
    void drawObject() const;
    void drawText(const std::string& text, glm::vec2 start_position) const;
    void render();
