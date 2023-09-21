@@ -22,7 +22,7 @@ void testMultithreading(
    if (PrintResult) kdtree.print();
    kdtree.getResult( output );
 
-   /*double search_time = 0.0;
+   double search_time = 0.0;
    std::vector<std::list<const Kdtree<float, 3>::KdtreeNode*>> founds;
    for (const auto& query : queries) {
       const auto start_time = std::chrono::steady_clock::now();
@@ -43,7 +43,7 @@ void testMultithreading(
          std::cout << "\n";
       }
    }
-   std::cout << ">> Total Search Time: " << search_time << " sec.\n";*/
+   std::cout << ">> Total Search Time: " << search_time << " sec.\n";
 
    double nn_search_time = 0.0;
    std::vector<std::forward_list<std::pair<float, const Kdtree<float, 3>::KdtreeNode*>>> nn_founds;
@@ -79,7 +79,7 @@ void testCUDA(
    if (PrintResult) kdtree.print();
    kdtree.getResult( output );
 
-   /*std::vector<std::vector<int>> founds;
+   std::vector<std::vector<int>> founds;
    auto start_time = std::chrono::steady_clock::now();
    kdtree.search( founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), SearchRadius );
    auto end_time = std::chrono::steady_clock::now();
@@ -98,14 +98,14 @@ void testCUDA(
          std::cout << "\n";
       }
    }
-   std::cout << ">> Total Search Time: " << search_time << " sec.\n";*/
+   std::cout << ">> Total Search Time: " << search_time << " sec.\n";
 
    std::vector<std::vector<std::pair<float,int>>> nn_founds;
-   auto start_time = std::chrono::steady_clock::now();
+   start_time = std::chrono::steady_clock::now();
    kdtree.findNearestNeighbors(
       nn_founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), NeighborNum
    );
-   auto end_time = std::chrono::steady_clock::now();
+   end_time = std::chrono::steady_clock::now();
    const auto nn_search_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
    std::cout << ">> Find " << NeighborNum << "-NN\n";
