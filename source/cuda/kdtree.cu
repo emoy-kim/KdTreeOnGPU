@@ -652,7 +652,6 @@ namespace cuda
 
    __device__ int num_after_removal;
    __device__ int removal_error;
-   __device__ int removal_error_address;
 
    __global__
    void cuRemoveDuplicates(
@@ -709,10 +708,7 @@ namespace cuda
          }
          else t = 0;
 
-         if (t < 0) {
-            removal_error = -1;
-            atomicMin( &removal_error_address, offset + warp_lane );
-         }
+         if (t < 0) removal_error = -1;
          in_buffer += warpSize;
          in_reference += warpSize;
 
@@ -745,10 +741,7 @@ namespace cuda
          }
          else t = 0;
 
-         if (t < 0) {
-            removal_error = -1;
-            atomicMin( &removal_error_address, offset + warp_lane );
-         }
+         if (t < 0) removal_error = -1;
          in_buffer += warpSize;
          in_reference += warpSize;
 
@@ -822,16 +815,9 @@ namespace cuda
       assert( Device.Reference[source_index] != nullptr && Device.Reference[target_index] != nullptr );
 
       int error = 0;
-      const int error_address = 0x7FFFFFFF;
       CHECK_CUDA(
          cudaMemcpyToSymbolAsync(
             removal_error, &error, sizeof( removal_error ), 0,
-            cudaMemcpyHostToDevice, Device.Stream
-         )
-      );
-      CHECK_CUDA(
-         cudaMemcpyToSymbolAsync(
-            removal_error_address, &error_address, sizeof( removal_error_address ), 0,
             cudaMemcpyHostToDevice, Device.Stream
          )
       );
