@@ -126,11 +126,6 @@ void ShaderGL::setTextUniformLocations()
    Location.Texture[0] = glGetUniformLocation( ShaderProgram, "BaseTexture" );
 }
 
-void ShaderGL::setLightViewUniformLocations()
-{
-   setBasicTransformationUniforms();
-}
-
 void ShaderGL::setSceneUniformLocations(int light_num)
 {
    setBasicTransformationUniforms();
@@ -161,10 +156,6 @@ void ShaderGL::setSceneUniformLocations(int light_num)
    }
 
    addUniformLocation( "UseTexture" );
-   addUniformLocation( "LightIndex" );
-   addUniformLocation( "LightViewMatrix" );
-   addUniformLocation( "LightViewProjectionMatrix" );
-   addUniformLocation( "ShadowColor" );
 }
 
 void ShaderGL::transferBasicTransformationUniforms(const glm::mat4& to_world, const CameraGL* camera) const

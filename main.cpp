@@ -6,6 +6,7 @@
 
 #include "kdtree.h"
 #include "cuda/kdtree.cuh"
+#include "renderer.h"
 
 constexpr bool PrintResult = false;
 constexpr float SearchRadius = 2.0f;
@@ -168,5 +169,9 @@ int main()
       assert( mt_output[i] == cuda_output[i] );
    }
 #endif
+   std::cout << "\n\n";
+
+   RendererGL renderer;
+   renderer.play();
    return 0;
 }

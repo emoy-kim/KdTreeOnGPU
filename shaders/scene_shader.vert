@@ -9,7 +9,6 @@ layout (location = 0) in vec3 v_position;
 layout (location = 1) in vec3 v_normal;
 layout (location = 2) in vec2 v_tex_coord;
 
-out vec4 position_in_wc;
 out vec3 position_in_ec;
 out vec3 normal_in_ec;
 out vec2 tex_coord;
@@ -25,8 +24,6 @@ void main()
    normal_in_ec = normalize( e_normal.xyz );
 
    tex_coord = v_tex_coord;
-
-   position_in_wc = WorldMatrix * vec4(v_position, 1.0f);
 
    gl_Position = ModelViewProjectionMatrix * vec4(v_position, 1.0f);
 }
