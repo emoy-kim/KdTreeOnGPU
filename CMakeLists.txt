@@ -10,6 +10,12 @@ set(
 	SOURCE_FILES 
 		main.cpp
 		source/kdtree.cpp
+		source/camera.cpp
+		source/light.cpp
+		source/object.cpp
+		source/renderer.cpp
+		source/shader.cpp
+		source/text.cpp
 )
 
 configure_file(include/project_constants.h.in ${PROJECT_BINARY_DIR}/project_constants.h @ONLY)
@@ -17,7 +23,7 @@ configure_file(include/project_constants.h.in ${PROJECT_BINARY_DIR}/project_cons
 find_package(CUDA)
 
 include_directories("include")
-include_directories("${CMAKE_SOURCE_DIR}/3rd_party/glm")
+include(cmake/add-libraries-linux.cmake)
 
 if(CUDA_FOUND)
 	set(
@@ -30,10 +36,6 @@ else()
 	add_executable(KdTreeOnGPU ${SOURCE_FILES})
 endif()
 
-target_link_libraries(
-     KdTreeOnGPU
-        pthread
-        dl
-)
+include(cmake/target-link-libraries-linux.cmake)
 
 target_include_directories(KdTreeOnGPU PUBLIC ${CMAKE_BINARY_DIR})

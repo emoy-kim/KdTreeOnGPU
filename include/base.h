@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glad/glad.h>
+#include <glfw3.h>
 #include <glm.hpp>
 #include <common.hpp>
 #include <gtc/type_ptr.hpp>
@@ -9,6 +11,8 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <gtx/quaternion.hpp>
 
+#include <FreeImage.h>
+#include <freetype/ftstroke.h>
 #include <iostream>
 #include <iomanip>
 #include <vector>

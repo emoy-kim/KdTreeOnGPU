@@ -1,0 +1,10 @@
+target_link_libraries(
+     KdTreeOnGPU
+        glad
+        glfw3
+        pthread
+        dl
+        X11
+        freeimage
+        freetype
+)
