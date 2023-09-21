@@ -3,7 +3,7 @@
 #include "base.h"
 #include "camera.h"
 
-class ShaderGL final
+class ShaderGL
 {
 public:
    struct LightLocationSet
@@ -43,6 +43,7 @@ public:
    void setComputeShader(const char* compute_shader_path);
    void setTextUniformLocations();
    void setSceneUniformLocations(int light_num);
+   virtual void setUniformLocations() {}
    void addUniformLocation(const std::string& name)
    {
       CustomLocations[name] = glGetUniformLocation( ShaderProgram, name.c_str() );

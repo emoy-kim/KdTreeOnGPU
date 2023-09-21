@@ -35,7 +35,7 @@ public:
       const std::string& texture_file_path,
       bool is_grayscale = false
    );
-   void setObject(GLenum draw_mode, const std::string& obj_file_path);
+   virtual void setObject(GLenum draw_mode, const std::string& obj_file_path);
    void setSquareObject(GLenum draw_mode, bool use_texture = true);
    void setSquareObject(
       GLenum draw_mode,
@@ -54,6 +54,14 @@ public:
    );
    void replaceVertices(const std::vector<glm::vec3>& vertices, bool normals_exist, bool textures_exist);
    void replaceVertices(const std::vector<float>& vertices, bool normals_exist, bool textures_exist);
+   void releaseCustomBuffer(const std::string& name)
+   {
+      const auto it = CustomBuffers.find( name );
+      if (it != CustomBuffers.end()) {
+         glDeleteBuffers( 1, &it->second );
+         CustomBuffers.erase( it );
+      }
+   }
    [[nodiscard]] GLuint getVAO() const { return VAO; }
    [[nodiscard]] GLuint getIBO() const { return IBO; }
    [[nodiscard]] GLenum getDrawMode() const { return DrawMode; }
@@ -68,12 +76,13 @@ public:
    }
 
    template<typename T>
-   void addCustomBufferObject(const std::string& name, int data_size)
+   [[nodiscard]] GLuint addCustomBufferObject(const std::string& name, int data_size)
    {
       GLuint buffer = 0;
       glCreateBuffers( 1, &buffer );
       glNamedBufferStorage( buffer, sizeof( T ) * data_size, nullptr, GL_DYNAMIC_STORAGE_BIT );
       CustomBuffers[name] = buffer;
+      return buffer;
    }
 
 protected:
