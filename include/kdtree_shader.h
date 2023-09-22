@@ -43,3 +43,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class SortByBlockShaderGL final : public ShaderGL
+{
+public:
+   SortByBlockShaderGL() = default;
+   ~SortByBlockShaderGL() override = default;
+
+   SortByBlockShaderGL(const SortByBlockShaderGL&) = delete;
+   SortByBlockShaderGL(const SortByBlockShaderGL&&) = delete;
+   SortByBlockShaderGL& operator=(const SortByBlockShaderGL&) = delete;
+   SortByBlockShaderGL& operator=(const SortByBlockShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

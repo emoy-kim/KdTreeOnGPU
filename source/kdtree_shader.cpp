@@ -16,3 +16,10 @@ void CopyCoordinatesShaderGL::setUniformLocations()
    addUniformLocation( "Axis" );
    addUniformLocation( "Dim" );
 }
+
+void SortByBlockShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+}

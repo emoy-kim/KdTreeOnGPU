@@ -39,11 +39,14 @@ private:
       std::unique_ptr<InitializeShaderGL> Initialize;
       std::unique_ptr<InitializeReferenceShaderGL> InitializeReference;
       std::unique_ptr<CopyCoordinatesShaderGL> CopyCoordinates;
+      std::unique_ptr<SortByBlockShaderGL> SortByBlock;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
          InitializeReference( std::make_unique<InitializeReferenceShaderGL>() ),
-         CopyCoordinates( std::make_unique<CopyCoordinatesShaderGL>() ) {}
+         CopyCoordinates( std::make_unique<CopyCoordinatesShaderGL>() ),
+         SortByBlock( std::make_unique<SortByBlockShaderGL>() )
+         {}
    };
 
    inline static RendererGL* Renderer = nullptr;

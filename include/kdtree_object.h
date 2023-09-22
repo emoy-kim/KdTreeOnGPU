@@ -16,6 +16,12 @@ struct KdtreeNodeGL
 class KdtreeGL final : public ObjectGL
 {
 public:
+   static constexpr int WarpSize = 32;
+   static constexpr int ThreadNum = 512;
+   static constexpr int ThreadBlockNum = 32;
+   static constexpr int SampleStride = 128;
+   static constexpr int SharedSize = WarpSize * WarpSize;
+
    KdtreeGL();
    ~KdtreeGL() override;
 
@@ -25,15 +31,17 @@ public:
    void releaseSorting();
    [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getSize() const { return static_cast<int>(Vertices.size()); }
+   [[nodiscard]] int getMaxSampleNum() const { return Sort.MaxSampleNum; }
    [[nodiscard]] GLuint getRoot() const { return Root; }
    [[nodiscard]] GLuint getCoordinates() const { return Coordinates; }
    [[nodiscard]] GLuint getReference(int index) const { return Reference[index]; }
    [[nodiscard]] GLuint getBuffer(int index) const { return Buffer[index]; }
+   [[nodiscard]] GLuint getSortReference() const { return Sort.Reference; }
+   [[nodiscard]] GLuint getSortBuffer() const { return Sort.Buffer; }
+
 
 
 private:
-   static constexpr int SampleStride = 128;
-
    struct SortGL
    {
       int MaxSampleNum;
