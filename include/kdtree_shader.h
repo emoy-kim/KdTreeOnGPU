@@ -99,3 +99,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class MergeReferencesShaderGL final : public ShaderGL
+{
+public:
+   MergeReferencesShaderGL() = default;
+   ~MergeReferencesShaderGL() override = default;
+
+   MergeReferencesShaderGL(const MergeReferencesShaderGL&) = delete;
+   MergeReferencesShaderGL(const MergeReferencesShaderGL&&) = delete;
+   MergeReferencesShaderGL& operator=(const MergeReferencesShaderGL&) = delete;
+   MergeReferencesShaderGL& operator=(const MergeReferencesShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

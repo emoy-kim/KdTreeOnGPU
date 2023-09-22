@@ -253,6 +253,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/merge_ranks_and_indices.comp").c_str()
    );
    KdtreeBuilder.MergeRanksAndIndices->setUniformLocations();
+
+   KdtreeBuilder.MergeReferences->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/merge_references.comp").c_str()
+   );
+   KdtreeBuilder.MergeReferences->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -371,6 +376,38 @@ void RendererGL::sortByAxis(int axis) const
          glDispatchCompute( block_num, 1, 1 );
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+         const int merge_pairs = remained_threads > sorted_size ?
+            divideUp( size, KdtreeGL::SampleStride ) : (size - remained_threads) / KdtreeGL::SampleStride;
+         glUseProgram( KdtreeBuilder.MergeReferences->getShaderProgram() );
+         KdtreeBuilder.MergeReferences->uniform1i( "SortedSize", sorted_size );
+         KdtreeBuilder.MergeReferences->uniform1i( "Size", size );
+         KdtreeBuilder.MergeReferences->uniform1i( "Axis", axis );
+         KdtreeBuilder.MergeReferences->uniform1i( "Dim", dim );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, out_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, out_buffer );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, Object->getLeftLimits() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 6, Object->getRightLimits() );
+         glDispatchCompute( merge_pairs, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+         if (remained_threads <= sorted_size) {
+            glCopyNamedBufferSubData(
+               in_reference, out_reference,
+               sizeof( int ) * (size - remained_threads), sizeof( int ) * (size - remained_threads),
+               sizeof( int ) * remained_threads
+            );
+            glCopyNamedBufferSubData(
+               in_buffer, out_buffer,
+               sizeof( float ) * (size - remained_threads), sizeof( float ) * (size - remained_threads),
+               sizeof( float ) * remained_threads
+            );
+         }
+
+         std::swap( in_reference, out_reference );
+         std::swap( in_buffer, out_buffer );
       }
    }
 }

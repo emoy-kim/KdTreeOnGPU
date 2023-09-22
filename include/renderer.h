@@ -43,6 +43,7 @@ private:
       std::unique_ptr<SortLastBlockShaderGL> SortLastBlock;
       std::unique_ptr<GenerateSampleRanksShaderGL> GenerateSampleRanks;
       std::unique_ptr<MergeRanksAndIndicesShaderGL> MergeRanksAndIndices;
+      std::unique_ptr<MergeReferencesShaderGL> MergeReferences;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -51,7 +52,8 @@ private:
          SortByBlock( std::make_unique<SortByBlockShaderGL>() ),
          SortLastBlock( std::make_unique<SortLastBlockShaderGL>() ),
          GenerateSampleRanks( std::make_unique<GenerateSampleRanksShaderGL>() ),
-         MergeRanksAndIndices( std::make_unique<MergeRanksAndIndicesShaderGL>() )
+         MergeRanksAndIndices( std::make_unique<MergeRanksAndIndicesShaderGL>() ),
+         MergeReferences( std::make_unique<MergeReferencesShaderGL>() )
          {}
    };
 

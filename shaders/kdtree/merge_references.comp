@@ -1,0 +1,132 @@
+#version 460
+
+layout (local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 1, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 2, std430) buffer InReference { int source_reference[]; };
+layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
+layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
+layout (binding = 5, std430) buffer LeftLimits { int left_limits[]; };
+layout (binding = 6, std430) buffer RightLimits { int right_limits[]; };
+
+uniform int SortedSize;
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+const int SampleStride = 128;
+
+shared int shared_reference[SampleStride * 2];
+shared float shared_buffer[SampleStride * 2];
+shared int left_start_source;
+shared int right_start_source;
+shared int left_start_target;
+shared int right_start_target;
+shared int left_length;
+shared int right_length;
+
+int getSampleNum(in int x)
+{
+   return (x + SampleStride - 1) / SampleStride;
+}
+
+float compareSuperKey(in float front_a, in float front_b, in int offset_a, in int offset_b)
+{
+   float difference = front_a - front_b;
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+int search(in int r, in float v, in int offset, in int length, in int step, in bool inclusive)
+{
+   if (length == 0) return 0;
+
+   int i = 0;
+   while (step > 0) {
+      int j = min( i + step, length );
+      float t = compareSuperKey( shared_buffer[offset + j - 1], v, shared_reference[offset + j - 1] * Dim, r * Dim );
+      if (t < 0.0f || (inclusive && t == 0.0f)) i = j;
+      step >>= 1;
+   }
+   return i;
+}
+
+void merge()
+{
+   float left_value, right_value;
+   int left_index, right_index, x, y;
+   int thread_index = int(gl_LocalInvocationID.x);
+   if (thread_index < left_length) {
+      left_value = shared_buffer[thread_index];
+      left_index = shared_reference[thread_index];
+      x = thread_index + search( left_index, left_value, SampleStride, right_length, SampleStride, false );
+   }
+   if (thread_index < right_length) {
+      right_value = shared_buffer[SampleStride + thread_index];
+      right_index = shared_reference[SampleStride + thread_index];
+      y = thread_index + search( right_index, right_value, 0, left_length, SampleStride, true );
+   }
+   memoryBarrierShared();
+   barrier();
+
+   if (thread_index < left_length) {
+      shared_buffer[x] = left_value;
+      shared_reference[x] = left_index;
+   }
+   if (thread_index < right_length) {
+      shared_buffer[y] = right_value;
+      shared_reference[y] = right_index;
+   }
+}
+
+void main()
+{
+   int i = int(gl_WorkGroupID.x) & (SortedSize * 2 / SampleStride - 1);
+   int segment_base = (int(gl_WorkGroupID.x) - i) * SampleStride;
+   int thread_index = int(gl_LocalInvocationID.x);
+   if (thread_index == 0) {
+      int left_elements = SortedSize;
+      int right_elements = min( SortedSize, Size - (segment_base + SortedSize) );
+      int sample_num = getSampleNum( left_elements ) + getSampleNum( right_elements );
+      int left_end_source = i < sample_num - 1 ? left_limits[gl_WorkGroupID.x + 1] : left_elements;
+      int right_end_source = i < sample_num - 1 ? right_limits[gl_WorkGroupID.x + 1] : right_elements;
+      left_start_source = left_limits[gl_WorkGroupID.x];
+      right_start_source = right_limits[gl_WorkGroupID.x];
+      left_length = left_end_source - left_start_source;
+      right_length = right_end_source - right_start_source;
+      left_start_target = left_start_source + right_start_source;
+      right_start_target = left_start_target + left_length;
+   }
+   memoryBarrierShared();
+   barrier();
+
+   if (thread_index < left_length) {
+      shared_buffer[thread_index] = source_buffer[segment_base + left_start_source + thread_index];
+      shared_reference[thread_index] = source_reference[segment_base + left_start_source + thread_index];
+   }
+   if (thread_index < right_length) {
+      shared_buffer[SampleStride + thread_index] =
+         source_buffer[segment_base + SortedSize + right_start_source + thread_index];
+      shared_reference[SampleStride + thread_index] =
+         source_reference[segment_base + SortedSize + right_start_source + thread_index];
+   }
+   memoryBarrierShared();
+   barrier();
+
+   merge();
+   memoryBarrierShared();
+   barrier();
+
+   if (thread_index < left_length) {
+      target_buffer[segment_base + left_start_target + thread_index] = shared_buffer[thread_index];
+      target_reference[segment_base + left_start_target + thread_index] = shared_reference[thread_index];
+   }
+   if (thread_index < right_length) {
+      target_buffer[segment_base + right_start_target + thread_index] = shared_buffer[left_length + thread_index];
+      target_reference[segment_base + right_start_target + thread_index] = shared_reference[left_length + thread_index];
+   }
+}

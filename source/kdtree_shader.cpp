@@ -48,3 +48,11 @@ void MergeRanksAndIndicesShaderGL::setUniformLocations()
    addUniformLocation( "Size" );
    addUniformLocation( "TotalThreadNum" );
 }
+
+void MergeReferencesShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SortedSize" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+}
