@@ -38,7 +38,10 @@ public:
    [[nodiscard]] GLuint getBuffer(int index) const { return Buffer[index]; }
    [[nodiscard]] GLuint getSortReference() const { return Sort.Reference; }
    [[nodiscard]] GLuint getSortBuffer() const { return Sort.Buffer; }
-
+   [[nodiscard]] GLuint getLeftRanks() const { return Sort.LeftRanks; }
+   [[nodiscard]] GLuint getRightRanks() const { return Sort.RightRanks; }
+   [[nodiscard]] GLuint getLeftLimits() const { return Sort.LeftLimits; }
+   [[nodiscard]] GLuint getRightLimits() const { return Sort.RightLimits; }
 
 
 private:

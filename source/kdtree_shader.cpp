@@ -23,3 +23,21 @@ void SortByBlockShaderGL::setUniformLocations()
    addUniformLocation( "Axis" );
    addUniformLocation( "Dim" );
 }
+
+void SortLastBlockShaderGL::setUniformLocations()
+{
+   addUniformLocation( "StartOffset" );
+   addUniformLocation( "SortedSize" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+}
+
+void GenerateSampleRanksShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SortedSize" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+   addUniformLocation( "TotalThreadNum" );
+}

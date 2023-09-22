@@ -57,3 +57,31 @@ public:
 
    void setUniformLocations() override;
 };
+
+class SortLastBlockShaderGL final : public ShaderGL
+{
+public:
+   SortLastBlockShaderGL() = default;
+   ~SortLastBlockShaderGL() override = default;
+
+   SortLastBlockShaderGL(const SortLastBlockShaderGL&) = delete;
+   SortLastBlockShaderGL(const SortLastBlockShaderGL&&) = delete;
+   SortLastBlockShaderGL& operator=(const SortLastBlockShaderGL&) = delete;
+   SortLastBlockShaderGL& operator=(const SortLastBlockShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
+
+class GenerateSampleRanksShaderGL final : public ShaderGL
+{
+public:
+   GenerateSampleRanksShaderGL() = default;
+   ~GenerateSampleRanksShaderGL() override = default;
+
+   GenerateSampleRanksShaderGL(const GenerateSampleRanksShaderGL&) = delete;
+   GenerateSampleRanksShaderGL(const GenerateSampleRanksShaderGL&&) = delete;
+   GenerateSampleRanksShaderGL& operator=(const GenerateSampleRanksShaderGL&) = delete;
+   GenerateSampleRanksShaderGL& operator=(const GenerateSampleRanksShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

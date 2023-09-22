@@ -40,12 +40,16 @@ private:
       std::unique_ptr<InitializeReferenceShaderGL> InitializeReference;
       std::unique_ptr<CopyCoordinatesShaderGL> CopyCoordinates;
       std::unique_ptr<SortByBlockShaderGL> SortByBlock;
+      std::unique_ptr<SortLastBlockShaderGL> SortLastBlock;
+      std::unique_ptr<GenerateSampleRanksShaderGL> GenerateSampleRanks;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
          InitializeReference( std::make_unique<InitializeReferenceShaderGL>() ),
          CopyCoordinates( std::make_unique<CopyCoordinatesShaderGL>() ),
-         SortByBlock( std::make_unique<SortByBlockShaderGL>() )
+         SortByBlock( std::make_unique<SortByBlockShaderGL>() ),
+         SortLastBlock( std::make_unique<SortLastBlockShaderGL>() ),
+         GenerateSampleRanks( std::make_unique<GenerateSampleRanksShaderGL>() )
          {}
    };
 
@@ -73,6 +77,8 @@ private:
    {
       return (size + ThreadGroupSize - 1) / ThreadGroupSize;
    }
+
+   static constexpr int divideUp(int a, int b) { return (a + b - 1) / b; }
 
    void registerCallbacks() const;
    void initialize();
