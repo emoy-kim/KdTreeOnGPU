@@ -113,3 +113,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class RemoveDuplicatesShaderGL final : public ShaderGL
+{
+public:
+   RemoveDuplicatesShaderGL() = default;
+   ~RemoveDuplicatesShaderGL() override = default;
+
+   RemoveDuplicatesShaderGL(const RemoveDuplicatesShaderGL&) = delete;
+   RemoveDuplicatesShaderGL(const RemoveDuplicatesShaderGL&&) = delete;
+   RemoveDuplicatesShaderGL& operator=(const RemoveDuplicatesShaderGL&) = delete;
+   RemoveDuplicatesShaderGL& operator=(const RemoveDuplicatesShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

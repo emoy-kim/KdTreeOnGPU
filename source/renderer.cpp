@@ -258,6 +258,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/merge_references.comp").c_str()
    );
    KdtreeBuilder.MergeReferences->setUniformLocations();
+
+   KdtreeBuilder.RemoveDuplicates->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/remove_duplicates.comp").c_str()
+   );
+   KdtreeBuilder.RemoveDuplicates->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -412,6 +417,40 @@ void RendererGL::sortByAxis(int axis) const
    }
 }
 
+void RendererGL::removeDuplicates(int axis) const
+{
+   const int size = Object->getSize();
+   const int dim = Object->getDimension();
+   const int source_index = dim;
+   const int target_index = axis;
+
+   constexpr int total_thread_num = KdtreeGL::ThreadBlockNum * KdtreeGL::ThreadNum;
+
+   assert( total_thread_num > KdtreeGL::SharedSize / 2  );
+
+   constexpr int block_num = total_thread_num * 2 / KdtreeGL::SharedSize;
+   constexpr int segment = total_thread_num / KdtreeGL::WarpSize;
+   const int size_per_warp = divideUp( size, segment );
+   const GLuint coordinates = Object->getCoordinates();
+   const GLuint unique_num_in_warp = Object->addCustomBufferObject<int>( "UniqueNumInWarp", segment );
+   glUseProgram( KdtreeBuilder.RemoveDuplicates->getShaderProgram() );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( "SizePerWarp", size_per_warp );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( "Size", size );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( "Axis", axis );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( "Dim", dim );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, unique_num_in_warp );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSortReference() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getSortBuffer() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getReference( source_index ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getBuffer( source_index ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, coordinates );
+   glDispatchCompute( block_num, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+
+   Object->releaseCustomBuffer( "UniqueNumInWarp" );
+}
+
 void RendererGL::sort() const
 {
    Object->prepareSorting();
@@ -423,6 +462,7 @@ void RendererGL::sort() const
       glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
       sortByAxis( axis );
+      removeDuplicates( axis );
    }
 
    Object->releaseSorting();

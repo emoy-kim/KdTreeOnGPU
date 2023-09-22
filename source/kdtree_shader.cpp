@@ -56,3 +56,11 @@ void MergeReferencesShaderGL::setUniformLocations()
    addUniformLocation( "Axis" );
    addUniformLocation( "Dim" );
 }
+
+void RemoveDuplicatesShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SizePerWarp" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+}

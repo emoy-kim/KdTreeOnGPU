@@ -44,6 +44,7 @@ private:
       std::unique_ptr<GenerateSampleRanksShaderGL> GenerateSampleRanks;
       std::unique_ptr<MergeRanksAndIndicesShaderGL> MergeRanksAndIndices;
       std::unique_ptr<MergeReferencesShaderGL> MergeReferences;
+      std::unique_ptr<RemoveDuplicatesShaderGL> RemoveDuplicates;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -53,7 +54,8 @@ private:
          SortLastBlock( std::make_unique<SortLastBlockShaderGL>() ),
          GenerateSampleRanks( std::make_unique<GenerateSampleRanksShaderGL>() ),
          MergeRanksAndIndices( std::make_unique<MergeRanksAndIndicesShaderGL>() ),
-         MergeReferences( std::make_unique<MergeReferencesShaderGL>() )
+         MergeReferences( std::make_unique<MergeReferencesShaderGL>() ),
+         RemoveDuplicates( std::make_unique<RemoveDuplicatesShaderGL>() )
          {}
    };
 
@@ -97,6 +99,7 @@ private:
    void setObject() const;
    void setShaders() const;
    void sortByAxis(int axis) const;
+   void removeDuplicates(int axis) const;
    void sort() const;
    void buildKdtree() const;
    void drawObject() const;

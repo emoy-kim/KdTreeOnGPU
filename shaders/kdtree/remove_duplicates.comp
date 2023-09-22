@@ -1,0 +1,119 @@
+#version 460
+#extension GL_NV_gpu_shader5 : enable
+#extension GL_ARB_shader_ballot : enable
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer UniqueNumInWarp { int unique_num_in_warp[]; };
+layout (binding = 1, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 2, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 3, std430) buffer InReference { int source_reference[]; };
+layout (binding = 4, std430) buffer InBuffer { float source_buffer[]; };
+layout (binding = 5, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int SizePerWarp;
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+const int WarpSize = 32;
+const int SharedSize = WarpSize * WarpSize;
+
+shared int shared_reference[SharedSize];
+shared float shared_buffer[SharedSize];
+
+float compareSuperKey(in float front_a, in float front_b, in int offset_a, in int offset_b)
+{
+   float difference = front_a - front_b;
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int warp_index = index / WarpSize;
+   int warp_lane = index & (WarpSize - 1);
+   int offset = warp_index * SizePerWarp, in_offset = offset;
+   int size_per_warp = min( SizePerWarp, Size - offset );
+
+   const int warps_per_block = WarpSize / 2;
+   int shared_base = WarpSize * 2 * (warp_index % warps_per_block);
+   int precede_mask = (1 << warp_lane) - 1;
+
+   float t, v;
+   int r, processed_size, unique_mask = 0;
+   for (processed_size = 0; processed_size < size_per_warp && unique_mask == 0; processed_size += WarpSize) {
+      if (warp_lane < size_per_warp) {
+         shared_buffer[shared_base + warp_lane] = v = source_buffer[in_offset + warp_lane];
+         shared_reference[shared_base + warp_lane] = r = source_reference[in_offset + warp_lane];
+         if (warp_lane > 0) {
+            t = compareSuperKey(
+               v, shared_buffer[shared_base + warp_lane - 1],
+               r * Dim, shared_reference[shared_base + warp_lane - 1] * Dim
+            );
+         }
+         else if (warp_index > 0) {
+            t = compareSuperKey( v, source_buffer[in_offset - 1], r * Dim, source_reference[in_offset - 1] * Dim );
+         }
+         else t = 1.0f;
+      }
+      else t = 0.0f;
+      in_offset += WarpSize;
+
+      unique_mask = int(ballotARB( t > 0.0f ));
+      if (t > 0.0f) {
+         int i = bitCount( unique_mask & precede_mask );
+         shared_buffer[shared_base + i] = v;
+         shared_reference[shared_base + i] = r;
+      }
+   }
+
+   int write_num = bitCount( unique_mask );
+   if (write_num == WarpSize) {
+      target_buffer[offset + warp_lane] = shared_buffer[shared_base + warp_lane];
+      target_reference[offset + warp_lane] = shared_reference[shared_base + warp_lane];
+   }
+
+   const int shared_address_mask = WarpSize * 2 - 1;
+   for (; processed_size < size_per_warp; processed_size += WarpSize) {
+      if (processed_size + warp_lane < size_per_warp) {
+         int i = (write_num + warp_lane) & shared_address_mask;
+         int j = (write_num + warp_lane - 1) & shared_address_mask;
+         shared_buffer[shared_base + i] = v = source_buffer[in_offset + warp_lane];
+         shared_reference[shared_base + i] = r = source_reference[in_offset + warp_lane];
+         t = compareSuperKey(
+            v, shared_buffer[shared_base + j],
+            r * Dim, shared_reference[shared_base + j] * Dim
+         );
+      }
+      else t = 0.0f;
+      in_offset += WarpSize;
+
+      unique_mask = int(ballotARB( t > 0.0f ));
+      if (t > 0.0f) {
+         int i = (write_num + bitCount( unique_mask & precede_mask )) & shared_address_mask;
+         shared_buffer[shared_base + i] = v;
+         shared_reference[shared_base + i] = r;
+      }
+
+      int n = bitCount( unique_mask );
+      if (((write_num ^ (write_num + n)) & WarpSize) != 0) {
+         int i = (write_num & ~(WarpSize - 1)) + warp_lane;
+         target_buffer[offset + i] = shared_buffer[shared_base + (write_num & WarpSize) + warp_lane];
+         target_reference[offset + i] = shared_reference[shared_base + (write_num & WarpSize) + warp_lane];
+      }
+      write_num += n;
+   }
+
+   if (warp_lane < (write_num & (WarpSize - 1))) {
+      int i = (write_num & ~(WarpSize - 1)) + warp_lane;
+      target_buffer[offset + i] = shared_buffer[shared_base + (write_num & WarpSize) + warp_lane];
+      target_reference[offset + i] = shared_reference[shared_base + (write_num & WarpSize) + warp_lane];
+   }
+
+   if (warp_lane == 0) unique_num_in_warp[warp_index] = write_num;
+}
