@@ -1,0 +1,53 @@
+#version 460
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 1, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 2, std430) buffer InReference { int source_reference[]; };
+layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
+layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int StartOffset;
+uniform int SortedSize;
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+
+float compareSuperKey(in int offset_a, in int offset_b)
+{
+   float difference = coordinates[offset_a + Axis] - coordinates[offset_b + Axis];
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x) * SortedSize * 2;
+   if (index >= Size) return;
+
+   int mid = min( SortedSize, Size - index );
+   int end = min( SortedSize * 2, Size - index );
+   int left = 0, right = mid;
+   for (int i = 0; i < end; ++i) {
+      bool take_from_left = left < mid && (right >= end ||
+         compareSuperKey(
+            source_reference[StartOffset + left] * Dim,
+            source_reference[StartOffset + right] * Dim
+         ) < 0.0f);
+      if (take_from_left) {
+         target_buffer[StartOffset + index + i] = source_buffer[StartOffset + index + left];
+         target_reference[StartOffset + index + i] = source_reference[StartOffset + index + left];
+         left++;
+      }
+      else {
+         target_buffer[StartOffset + index + i] = source_buffer[StartOffset + index + right];
+         target_reference[StartOffset + index + i] = source_reference[StartOffset + index + right];
+         right++;
+      }
+   }
+}

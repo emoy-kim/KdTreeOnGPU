@@ -1,0 +1,56 @@
+#version 460
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer Limits { int limits[]; };
+layout (binding = 1, std430) buffer Ranks { int ranks[]; };
+
+uniform int SortedSize;
+uniform int Size;
+uniform int TotalThreadNum;
+const int SampleStride = 128;
+
+int getSampleNum(in int x)
+{
+   return (x + SampleStride - 1) / SampleStride;
+}
+
+int getNextPowerOfTwo(in int x)
+{
+   return 1 << (1 + findMSB( x - 1 ));
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   if (index >= TotalThreadNum) return;
+
+   int i = index & (SortedSize / SampleStride - 1);
+   int segment_base = (index - i) * SampleStride * 2;
+   int offset = (index - i) * 2;
+
+   int left_elements = SortedSize;
+   int right_elements = min( SortedSize, Size - (segment_base + SortedSize) );
+   int left_sample_num = getSampleNum( left_elements );
+   int right_sample_num = getSampleNum( right_elements );
+   if (i < left_sample_num) {
+      int x = 0;
+      if (right_sample_num > 0) {
+         for (int s = getNextPowerOfTwo( right_sample_num ); s > 0; s >>= 1) {
+            int j = min( x + s, right_sample_num );
+            if (ranks[offset + left_sample_num + j - 1] < ranks[offset + i]) x = j;
+         }
+      }
+      limits[offset + x + i] = ranks[offset + i];
+   }
+   if (i < right_sample_num) {
+      int x = 0;
+      if (left_sample_num > 0) {
+         for (int s = getNextPowerOfTwo( left_sample_num ); s > 0; s >>= 1) {
+            int j = min( x + s, left_sample_num );
+            if (ranks[offset + j - 1] <= ranks[offset + left_sample_num + i]) x = j;
+         }
+      }
+      limits[offset + x + i] = ranks[offset + left_sample_num + i];
+   }
+}

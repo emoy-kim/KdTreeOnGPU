@@ -248,6 +248,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/generate_sample_ranks.comp").c_str()
    );
    KdtreeBuilder.GenerateSampleRanks->setUniformLocations();
+
+   KdtreeBuilder.MergeRanksAndIndices->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/merge_ranks_and_indices.comp").c_str()
+   );
+   KdtreeBuilder.MergeRanksAndIndices->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -349,10 +354,22 @@ void RendererGL::sortByAxis(int axis) const
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getCoordinates() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
          glDispatchCompute( block_num, 1, 1 );
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+         glUseProgram( KdtreeBuilder.MergeRanksAndIndices->getShaderProgram() );
+         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "SortedSize", sorted_size );
+         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "Size", size );
+         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "TotalThreadNum", total_thread_num );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftLimits() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftRanks() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRightLimits() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
       }
    }

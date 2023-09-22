@@ -1,0 +1,81 @@
+#version 460
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer LeftRanks { int left_ranks[]; };
+layout (binding = 1, std430) buffer RightRanks { int right_ranks[]; };
+layout (binding = 2, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 3, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int SortedSize;
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+uniform int TotalThreadNum;
+const int SampleStride = 128;
+
+int getSampleNum(in int x)
+{
+   return (x + SampleStride - 1) / SampleStride;
+}
+
+int getNextPowerOfTwo(in int x)
+{
+   return 1 << (1 + findMSB( x - 1 ));
+}
+
+float compareSuperKey(in float front_a, in float front_b, in int offset_a, in int offset_b)
+{
+   float difference = front_a - front_b;
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+int search(in int r, in float v, in int offset, in int length, in int step, in bool inclusive)
+{
+   if (length == 0) return 0;
+
+   int i = 0;
+   while (step > 0) {
+      int j = min( i + step, length );
+      float t = compareSuperKey( target_buffer[offset + j - 1], v, target_reference[offset + j - 1] * Dim, r * Dim );
+      if (t < 0.0f || (inclusive && t == 0.0f)) i = j;
+      step >>= 1;
+   }
+   return i;
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   if (index >= TotalThreadNum) return;
+
+   int i = index & (SortedSize / SampleStride - 1);
+   int segment_base = (index - i) * SampleStride * 2;
+   int ranks_offset = (index - i) * 2;
+   int left_elements = SortedSize;
+   int right_elements = min( SortedSize, Size - (segment_base + SortedSize) );
+   int left_sample_num = getSampleNum( left_elements );
+   int right_sample_num = getSampleNum( right_elements );
+   if (i < left_sample_num) {
+      left_ranks[ranks_offset + i] = i * SampleStride;
+      right_ranks[ranks_offset + i] = search(
+         target_reference[segment_base + i * SampleStride],
+         target_buffer[segment_base + i * SampleStride],
+         segment_base + SortedSize, right_elements, getNextPowerOfTwo( right_elements ), false
+      );
+   }
+   if (i < right_sample_num) {
+      right_ranks[ranks_offset + SortedSize / SampleStride + i] = i * SampleStride;
+      left_ranks[ranks_offset + SortedSize / SampleStride + i] = search(
+         target_reference[segment_base + SortedSize + i * SampleStride],
+         target_buffer[segment_base + SortedSize + i * SampleStride],
+         segment_base, left_elements, getNextPowerOfTwo( left_elements ), true
+      );
+   }
+}

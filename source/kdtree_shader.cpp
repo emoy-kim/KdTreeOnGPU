@@ -41,3 +41,10 @@ void GenerateSampleRanksShaderGL::setUniformLocations()
    addUniformLocation( "Dim" );
    addUniformLocation( "TotalThreadNum" );
 }
+
+void MergeRanksAndIndicesShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SortedSize" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "TotalThreadNum" );
+}

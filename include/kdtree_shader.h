@@ -85,3 +85,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class MergeRanksAndIndicesShaderGL final : public ShaderGL
+{
+public:
+   MergeRanksAndIndicesShaderGL() = default;
+   ~MergeRanksAndIndicesShaderGL() override = default;
+
+   MergeRanksAndIndicesShaderGL(const MergeRanksAndIndicesShaderGL&) = delete;
+   MergeRanksAndIndicesShaderGL(const MergeRanksAndIndicesShaderGL&&) = delete;
+   MergeRanksAndIndicesShaderGL& operator=(const MergeRanksAndIndicesShaderGL&) = delete;
+   MergeRanksAndIndicesShaderGL& operator=(const MergeRanksAndIndicesShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
