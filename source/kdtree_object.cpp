@@ -1,7 +1,7 @@
 #include "kdtree_object.h"
 
 KdtreeGL::KdtreeGL() :
-   Dim( 3 ), TupleNum( 0 ), RootNode( -1 ), Sort(), Root( 0 ), Coordinates( 0 ), LeftChildNumInWarp( 0 ),
+   Dim( 3 ), UniqueNum( 0 ), RootNode( -1 ), Sort(), Root( 0 ), Coordinates( 0 ), LeftChildNumInWarp( 0 ),
    RightChildNumInWarp( 0 ), NodeSums( 0 ), MidReferences{ 0, 0 }, Reference( Dim + 2, 0 ), Buffer( Dim + 2, 0 )
 {
 }

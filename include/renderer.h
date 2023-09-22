@@ -45,6 +45,7 @@ private:
       std::unique_ptr<MergeRanksAndIndicesShaderGL> MergeRanksAndIndices;
       std::unique_ptr<MergeReferencesShaderGL> MergeReferences;
       std::unique_ptr<RemoveDuplicatesShaderGL> RemoveDuplicates;
+      std::unique_ptr<RemoveGapsShaderGL> RemoveGaps;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -55,7 +56,8 @@ private:
          GenerateSampleRanks( std::make_unique<GenerateSampleRanksShaderGL>() ),
          MergeRanksAndIndices( std::make_unique<MergeRanksAndIndicesShaderGL>() ),
          MergeReferences( std::make_unique<MergeReferencesShaderGL>() ),
-         RemoveDuplicates( std::make_unique<RemoveDuplicatesShaderGL>() )
+         RemoveDuplicates( std::make_unique<RemoveDuplicatesShaderGL>() ),
+         RemoveGaps( std::make_unique<RemoveGapsShaderGL>() )
          {}
    };
 

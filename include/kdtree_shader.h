@@ -127,3 +127,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class RemoveGapsShaderGL final : public ShaderGL
+{
+public:
+   RemoveGapsShaderGL() = default;
+   ~RemoveGapsShaderGL() override = default;
+
+   RemoveGapsShaderGL(const RemoveGapsShaderGL&) = delete;
+   RemoveGapsShaderGL(const RemoveGapsShaderGL&&) = delete;
+   RemoveGapsShaderGL& operator=(const RemoveGapsShaderGL&) = delete;
+   RemoveGapsShaderGL& operator=(const RemoveGapsShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

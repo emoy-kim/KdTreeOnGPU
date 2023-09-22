@@ -263,6 +263,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/remove_duplicates.comp").c_str()
    );
    KdtreeBuilder.RemoveDuplicates->setUniformLocations();
+
+   KdtreeBuilder.RemoveGaps->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/remove_gaps.comp").c_str()
+   );
+   KdtreeBuilder.RemoveGaps->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -432,6 +437,7 @@ void RendererGL::removeDuplicates(int axis) const
    constexpr int segment = total_thread_num / KdtreeGL::WarpSize;
    const int size_per_warp = divideUp( size, segment );
    const GLuint coordinates = Object->getCoordinates();
+   const GLuint num_after_removal = Object->addCustomBufferObject<int>( "NumAfterRemoval", 1 );
    const GLuint unique_num_in_warp = Object->addCustomBufferObject<int>( "UniqueNumInWarp", segment );
    glUseProgram( KdtreeBuilder.RemoveDuplicates->getShaderProgram() );
    KdtreeBuilder.RemoveDuplicates->uniform1i( "SizePerWarp", size_per_warp );
@@ -447,7 +453,24 @@ void RendererGL::removeDuplicates(int axis) const
    glDispatchCompute( block_num, 1, 1 );
    glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+   glUseProgram( KdtreeBuilder.RemoveGaps->getShaderProgram() );
+   KdtreeBuilder.RemoveGaps->uniform1i( "SizePerWarp", size_per_warp );
+   KdtreeBuilder.RemoveGaps->uniform1i( "Size", size );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( target_index ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getBuffer( target_index ) );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getSortReference() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getSortBuffer() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, unique_num_in_warp );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, num_after_removal );
+   glDispatchCompute( block_num, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+   int num = 0;
+   glGetNamedBufferSubData( num_after_removal, 0, sizeof( int ), &num );
+   Object->setUniqueNum( num );
+   std::cout << Object->getUniqueNum() << std::endl;
+
+   Object->releaseCustomBuffer( "NumAfterRemoval" );
    Object->releaseCustomBuffer( "UniqueNumInWarp" );
 }
 

@@ -1,0 +1,35 @@
+#version 460
+#extension GL_NV_gpu_shader5 : enable
+#extension GL_ARB_shader_ballot : enable
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 1, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 2, std430) buffer InReference { int source_reference[]; };
+layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
+layout (binding = 4, std430) buffer UniqueNumInWarp { int unique_num_in_warp[]; };
+layout (binding = 5, std430) buffer NumAfterRemoval { int num_after_removal; };
+
+uniform int SizePerWarp;
+uniform int Size;
+const int WarpSize = 32;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int warp_index = index / WarpSize;
+   int warp_lane = index & (WarpSize - 1);
+   int offset = warp_index * SizePerWarp;
+
+   int target_offset = 0;
+   for (int i = 0; i < warp_index; ++i) target_offset += unique_num_in_warp[i];
+   int unique_num_in_this_warp = unique_num_in_warp[warp_index];
+
+   for (int i = warp_lane; i < unique_num_in_this_warp; i += WarpSize) {
+      target_buffer[target_offset + i] = source_buffer[offset + i];
+      target_reference[target_offset + i] = source_reference[offset + i];
+   }
+
+   if (warp_lane == 0 && offset + SizePerWarp >= Size) num_after_removal = target_offset + unique_num_in_this_warp;
+}

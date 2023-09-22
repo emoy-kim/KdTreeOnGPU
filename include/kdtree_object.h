@@ -29,7 +29,9 @@ public:
    void initialize();
    void prepareSorting();
    void releaseSorting();
+   void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    [[nodiscard]] int getDimension() const { return Dim; }
+   [[nodiscard]] int getUniqueNum() const { return UniqueNum; }
    [[nodiscard]] int getSize() const { return static_cast<int>(Vertices.size()); }
    [[nodiscard]] int getMaxSampleNum() const { return Sort.MaxSampleNum; }
    [[nodiscard]] GLuint getRoot() const { return Root; }
@@ -61,7 +63,7 @@ private:
    };
 
    const int Dim;
-   int TupleNum;
+   int UniqueNum;
    int RootNode;
    SortGL Sort;
    GLuint Root;

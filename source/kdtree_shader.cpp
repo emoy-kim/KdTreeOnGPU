@@ -64,3 +64,9 @@ void RemoveDuplicatesShaderGL::setUniformLocations()
    addUniformLocation( "Axis" );
    addUniformLocation( "Dim" );
 }
+
+void RemoveGapsShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SizePerWarp" );
+   addUniformLocation( "Size" );
+}
