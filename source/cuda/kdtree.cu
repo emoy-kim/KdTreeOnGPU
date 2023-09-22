@@ -236,15 +236,15 @@ namespace cuda
 
       const auto t = static_cast<int>(threadIdx.x);
       const int target_block_size = static_cast<int>(blockDim.x) * 2;
-      const int index = static_cast<int>(blockIdx.x * target_block_size + threadIdx.x);
+      const int index = static_cast<int>(blockIdx.x) * target_block_size + t;
       source_buffer += index;
       source_reference += index;
       target_buffer += index;
       target_reference += index;
-      buffer[threadIdx.x] = source_buffer[0];
-      reference[threadIdx.x] = source_reference[0];
-      buffer[blockDim.x + threadIdx.x] = source_buffer[blockDim.x];
-      reference[blockDim.x + threadIdx.x] = source_reference[blockDim.x];
+      buffer[t] = source_buffer[0];
+      reference[t] = source_reference[0];
+      buffer[blockDim.x + t] = source_buffer[blockDim.x];
+      reference[blockDim.x + t] = source_reference[blockDim.x];
 
       // Given S = SharedSize, for all threads, [base[i], base[i+step]] is
       // step 1: [0, 1] ... [S-2, S-1]
@@ -279,10 +279,10 @@ namespace cuda
       }
 
       __syncthreads();
-      target_buffer[0] = buffer[threadIdx.x];
-      target_reference[0] = reference[threadIdx.x];
-      target_buffer[blockDim.x] = buffer[blockDim.x + threadIdx.x];
-      target_reference[blockDim.x] = reference[blockDim.x + threadIdx.x];
+      target_buffer[0] = buffer[t];
+      target_reference[0] = reference[t];
+      target_buffer[blockDim.x] = buffer[blockDim.x + t];
+      target_reference[blockDim.x] = reference[blockDim.x + t];
    }
 
    __global__
@@ -562,7 +562,7 @@ namespace cuda
 
       int block_num = TupleNum / SharedSize;
       if (block_num > 0) {
-         cuSortByBlock<<<TupleNum / SharedSize, SharedSize / 2, 0, Device.Stream>>>(
+         cuSortByBlock<<<block_num, SharedSize / 2, 0, Device.Stream>>>(
             in_reference, in_buffer,
             Device.Reference[axis], Device.Buffer[axis], Device.CoordinatesDevicePtr, TupleNum, axis, Dim
          );
