@@ -1,0 +1,83 @@
+#version 460
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 1, std430) buffer OutBuffer { float target_buffer[]; };
+layout (binding = 2, std430) buffer InReference { int source_reference[]; };
+layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
+layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int Size;
+uniform int Axis;
+uniform int Dim;
+
+shared int shared_reference[1024];
+shared float shared_buffer[1024];
+
+float compareSuperKey(in float front_a, in float front_b, in int offset_a, in int offset_b)
+{
+   float difference = front_a - front_b;
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+int search(in int r, in float v, in int offset, in int step, in bool inclusive)
+{
+   if (step == 0) return 0;
+
+   int i = 0;
+   while (step > 0) {
+      int j = min( i + step, step );
+      float t = compareSuperKey( shared_buffer[offset + j - 1], v, shared_reference[offset + j - 1] * Dim, r * Dim );
+      if (t < 0.0f || (inclusive && t == 0.0f)) i = j;
+      step >>= 1;
+   }
+   return i;
+}
+
+void main()
+{
+   int t = int(gl_LocalInvocationID.x);
+   int target_block_size = int(gl_WorkGroupSize.x) * 2;
+   int index = int(gl_WorkGroupID.x) * target_block_size + t;
+   shared_buffer[t] = source_buffer[index];
+   shared_reference[t] = source_reference[index];
+   shared_buffer[gl_WorkGroupSize.x + t] = source_buffer[index + gl_WorkGroupSize.x];
+   shared_reference[gl_WorkGroupSize.x + t] = source_reference[index + gl_WorkGroupSize.x];
+
+   for (int step = 1; step < target_block_size; step <<= 1) {
+      int i = t & (step - 1);
+      int offset = (t - i) * 2;
+
+      memoryBarrierShared();
+      barrier();
+
+      int reference_x = shared_reference[offset + i];
+      float buffer_x = shared_buffer[offset + i];
+      int x = search( reference_x, buffer_x, offset + step, step, false ) + i;
+      int reference_y = shared_reference[offset + i + step];
+      float buffer_y = shared_buffer[offset + i + step];
+      int y = search( reference_y, buffer_y, offset + i + step, step, true ) + i;
+
+      memoryBarrierShared();
+      barrier();
+
+      shared_buffer[offset + x] = buffer_x;
+      shared_buffer[offset + y] = buffer_y;
+      shared_reference[offset + x] = reference_x;
+      shared_reference[offset + y] = reference_y;
+   }
+
+   memoryBarrierShared();
+   barrier();
+
+   target_buffer[index] = shared_buffer[t];
+   target_reference[index] = shared_reference[t];
+   target_buffer[index + gl_WorkGroupSize.x] = shared_buffer[gl_WorkGroupSize.x + t];
+   target_reference[index + gl_WorkGroupSize.x] = shared_reference[gl_WorkGroupSize.x + t];
+}
