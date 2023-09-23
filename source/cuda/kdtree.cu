@@ -575,7 +575,7 @@ namespace cuda
          const std::array<node_type*, 2> buffers{ Device.Buffer[axis] + start_offset, in_buffer + start_offset };
          const std::array<int*, 2> references{ Device.Reference[axis] + start_offset, in_reference + start_offset };
          for (int sorted_size = 1; sorted_size < remained_size; sorted_size <<= 1) {
-            cuSortLastBlock<<<1, divideUp( remained_size, sorted_size * 2 ), 0, Device.Stream>>>(
+            cuSortLastBlock<<<divideUp( remained_size, ThreadNum ), ThreadNum, 0, Device.Stream>>>(
                references[buffer_index ^ 1], buffers[buffer_index ^ 1],
                references[buffer_index], buffers[buffer_index], Device.CoordinatesDevicePtr,
                sorted_size, remained_size, axis, Dim
