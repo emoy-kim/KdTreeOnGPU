@@ -79,3 +79,10 @@ void PartitionShaderGL::setUniformLocations()
    addUniformLocation( "Dim" );
    addUniformLocation( "Depth" );
 }
+
+void RemovePartitionGapsShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Start" );
+   addUniformLocation( "End" );
+   addUniformLocation( "Depth" );
+}

@@ -155,3 +155,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class RemovePartitionGapsShaderGL final : public ShaderGL
+{
+public:
+   RemovePartitionGapsShaderGL() = default;
+   ~RemovePartitionGapsShaderGL() override = default;
+
+   RemovePartitionGapsShaderGL(const RemovePartitionGapsShaderGL&) = delete;
+   RemovePartitionGapsShaderGL(const RemovePartitionGapsShaderGL&&) = delete;
+   RemovePartitionGapsShaderGL& operator=(const RemovePartitionGapsShaderGL&) = delete;
+   RemovePartitionGapsShaderGL& operator=(const RemovePartitionGapsShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

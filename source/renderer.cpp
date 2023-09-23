@@ -271,6 +271,11 @@ void RendererGL::setShaders() const
 
    KdtreeBuilder.Partition->setComputeShader( std::string(shader_directory_path + "/kdtree/partition.comp").c_str() );
    KdtreeBuilder.Partition->setUniformLocations();
+
+   KdtreeBuilder.RemovePartitionGaps->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/remove_partition_gaps.comp").c_str()
+   );
+   KdtreeBuilder.RemovePartitionGaps->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -533,6 +538,17 @@ void RendererGL::partitionDimension(int axis, int depth) const
          glDispatchCompute( block_num, 1, 1 );
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+         glUseProgram( KdtreeBuilder.RemovePartitionGaps->getShaderProgram() );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( "Start", 0 );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( "End", size - 1 );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( "Depth", depth );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( r ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getReference( dim + 1 ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getLeftChildNumInWarp() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getRightChildNumInWarp() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
       }
    }
    else {

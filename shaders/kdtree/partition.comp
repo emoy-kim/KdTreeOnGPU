@@ -56,7 +56,7 @@ void runPartition(
    int index = int(gl_GlobalInvocationID.x);
    int warp_index = (index / WarpSize) & (warp_num_per_node - 1);
    int warp_lane = index & (WarpSize - 1);
-   int offset = warp_index * size_per_warp, in_offset = offset;
+   int offset = warp_index * size_per_warp, in_offset = start + offset;
    size_per_warp = min( size_per_warp, partition_size - offset );
 
    const int warps_per_block = WarpSize / 2;
@@ -68,7 +68,7 @@ void runPartition(
    int r, left_write_num = 0, right_write_num = 0;
    for (int processed_size = 0; processed_size < size_per_warp; processed_size += WarpSize) {
       if (processed_size + warp_lane < size_per_warp) {
-         r = source_reference[offset + warp_lane];
+         r = source_reference[in_offset + warp_lane];
          t = compareSuperKey( r * Dim, mid_reference * Dim );
       }
       else t = 0.0f;
@@ -83,7 +83,8 @@ void runPartition(
       int n = bitCount( unique_mask );
       if (((left_write_num ^ (left_write_num + n)) & WarpSize) != 0) {
          int i = (left_write_num & ~(WarpSize - 1)) + warp_lane;
-         target_left_reference[offset + i] = left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
+         target_left_reference[start + offset + i] =
+            left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
       }
       left_write_num += n;
 
@@ -96,22 +97,25 @@ void runPartition(
       n = bitCount( unique_mask );
       if (((right_write_num ^ (right_write_num + n)) & WarpSize) != 0) {
          int i = (right_write_num & ~(WarpSize - 1)) + warp_lane;
-         target_right_reference[offset + i] = right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
+         target_right_reference[start + offset + i] =
+            right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
       }
       right_write_num += n;
    }
 
    if (warp_lane < (left_write_num & (WarpSize - 1))) {
       int i = (left_write_num & ~(WarpSize - 1)) + warp_lane;
-      target_left_reference[offset + i] = left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
+      target_left_reference[start + offset + i] =
+         left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
    }
    if (warp_lane < (right_write_num & (WarpSize - 1))) {
       int i = (right_write_num & ~(WarpSize - 1)) + warp_lane;
-      target_right_reference[offset + i] = right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
+      target_right_reference[start + offset + i] =
+         right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
    }
 
-   if (warp_lane == 0) left_child_num_in_warp[warp_index] = left_write_num;
-   if (warp_lane == 0) right_child_num_in_warp[warp_index] = right_write_num;
+   if (warp_lane == 0) left_child_num_in_warp[child_num_offset + warp_index] = left_write_num;
+   if (warp_lane == 0) right_child_num_in_warp[child_num_offset + warp_index] = right_write_num;
 }
 
 void main()

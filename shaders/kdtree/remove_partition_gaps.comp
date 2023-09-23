@@ -1,0 +1,62 @@
+#version 460
+#extension GL_KHR_shader_subgroup_shuffle : enable
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 1, std430) buffer InLeftReference { int source_left_reference[]; };
+layout (binding = 2, std430) buffer InRightReference { int source_right_reference[]; };
+layout (binding = 3, std430) buffer LeftChildNumInWarp { int left_child_num_in_warp[]; };
+layout (binding = 4, std430) buffer RightChildNumInWarp { int right_child_num_in_warp[]; };
+
+uniform int Start;
+uniform int End;
+uniform int Depth;
+const int WarpSize = 32;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int total_warp_num = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x / WarpSize);
+   int warp_num_per_node = total_warp_num >> Depth;
+   int warp_index = index / WarpSize;
+   int warp_lane = index & (WarpSize - 1);
+   int start = Start, end = End;
+
+   int mid = start + (end - start) / 2;
+   for (int i = 1; i <= Depth; ++i) {
+      if (bool(warp_index & (total_warp_num >> i))) start = mid + 1;
+      else end = mid - 1;
+      mid = start + (end - start) / 2;
+   }
+
+   int partition_size = end - start + 1;
+   int size_per_warp = (partition_size + warp_num_per_node - 1) / warp_num_per_node;
+   int offset = start + size_per_warp * (warp_index - (warp_index & ~(warp_num_per_node - 1)));
+
+   int target_offset = start, child_num_in_this_warp = 0;
+   if (warp_lane == 0) {
+      for (int i = warp_index & ~(warp_num_per_node - 1); i < warp_index; ++i) {
+         target_offset += left_child_num_in_warp[i];
+      }
+      child_num_in_this_warp = left_child_num_in_warp[warp_index];
+   }
+   target_offset = subgroupShuffle( target_offset, 0 );
+   child_num_in_this_warp = subgroupShuffle( child_num_in_this_warp, 0 );
+   for (int i = warp_lane; i < child_num_in_this_warp; i += WarpSize) {
+      target_reference[target_offset + i] = source_left_reference[offset + i];
+   }
+
+   target_offset = mid + 1;
+   if (warp_lane == 0) {
+      for (int i = warp_index & ~(warp_num_per_node - 1); i < warp_index; ++i) {
+         target_offset += right_child_num_in_warp[i];
+      }
+      child_num_in_this_warp = right_child_num_in_warp[warp_index];
+   }
+   target_offset = subgroupShuffle( target_offset, 0 );
+   child_num_in_this_warp = subgroupShuffle( child_num_in_this_warp, 0 );
+   for (int i = warp_lane; i < child_num_in_this_warp; i += WarpSize) {
+      target_reference[target_offset + i] = source_right_reference[offset + i];
+   }
+}
