@@ -286,6 +286,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/copy_reference.comp").c_str()
    );
    KdtreeBuilder.CopyReference->setUniformLocations();
+
+   KdtreeBuilder.PartitionFinal->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/partition_final.comp").c_str()
+   );
+   KdtreeBuilder.PartitionFinal->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -607,6 +612,37 @@ void RendererGL::build() const
       partitionDimension( i % dim, i );
    }
 
+   constexpr int total_thread_num = KdtreeGL::ThreadBlockNum * KdtreeGL::ThreadNum;
+   constexpr int block_num = total_thread_num * 2 / KdtreeGL::SharedSize;
+   constexpr int warp_num = total_thread_num / KdtreeGL::WarpSize;
+   const auto max_controllable_depth_for_warp =
+         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
+   const int loop_levels = std::max( (depth - 1) - max_controllable_depth_for_warp, 0 );
+   const int axis = (depth - 1) % dim;
+   const int size = Object->getUniqueNum();
+   const GLuint mid_reference = Object->getMidReferences( (depth - 1) & 1 );
+   const GLuint last_mid_reference = Object->getMidReferences( (depth - 2) & 1 );
+   for (int loop = 0; loop < (1 << loop_levels); ++loop) {
+      int start = 0, end = size - 1;
+      for (int i = 1; i <= loop_levels; ++i) {
+         const int mid = start + (end - start) / 2;
+         if (loop & (1 << (loop_levels - i))) start = mid + 1;
+         else end = mid - 1;
+      }
+
+      glUseProgram( KdtreeBuilder.PartitionFinal->getShaderProgram() );
+      KdtreeBuilder.PartitionFinal->uniform1i( "Start", start );
+      KdtreeBuilder.PartitionFinal->uniform1i( "End", end );
+      KdtreeBuilder.PartitionFinal->uniform1i( "Depth", depth - loop_levels );
+      KdtreeBuilder.PartitionFinal->uniform1i( "MidReferenceOffset", loop * warp_num );
+      KdtreeBuilder.PartitionFinal->uniform1i( "LastMidReferenceOffset", loop * warp_num / 2 );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, mid_reference );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, last_mid_reference );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getReference( axis ) );
+      glDispatchCompute( block_num, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+   }
    Object->releaseBuilding();
 }
 

@@ -101,3 +101,12 @@ void CopyReferenceShaderGL::setUniformLocations()
 {
    addUniformLocation( "Size" );
 }
+
+void PartitionFinalShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Start" );
+   addUniformLocation( "End" );
+   addUniformLocation( "Depth" );
+   addUniformLocation( "MidReferenceOffset" );
+   addUniformLocation( "LastMidReferenceOffset" );
+}

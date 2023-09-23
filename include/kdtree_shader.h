@@ -197,3 +197,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class PartitionFinalShaderGL final : public ShaderGL
+{
+public:
+   PartitionFinalShaderGL() = default;
+   ~PartitionFinalShaderGL() override = default;
+
+   PartitionFinalShaderGL(const PartitionFinalShaderGL&) = delete;
+   PartitionFinalShaderGL(const PartitionFinalShaderGL&&) = delete;
+   PartitionFinalShaderGL& operator=(const PartitionFinalShaderGL&) = delete;
+   PartitionFinalShaderGL& operator=(const PartitionFinalShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

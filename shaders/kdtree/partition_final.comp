@@ -1,0 +1,61 @@
+#version 460
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+struct KdtreeNode
+{
+   int Index;
+   int ParentIndex;
+   int LeftChildIndex;
+   int RightChildIndex;
+};
+
+layout (binding = 0, std430) buffer Root { KdtreeNode root[]; };
+layout (binding = 1, std430) buffer MidReferences { int mid_references[]; };
+layout (binding = 2, std430) buffer LastMidReferences { int last_mid_references[]; };
+layout (binding = 3, std430) buffer PrimaryReference { int primary_reference[]; };
+
+uniform int Start;
+uniform int End;
+uniform int Depth;
+uniform int MidReferenceOffset;
+uniform int LastMidReferenceOffset;
+const int WarpSize = 32;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int total_warp_num = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x / WarpSize);
+   int warp_index = index / WarpSize;
+   int start = Start, end = End;
+
+   for (int i = 1; i <= Depth; ++i) {
+      int mid = start + (end - start) / 2;
+      if (bool(warp_index & (total_warp_num >> i))) start = mid + 1;
+      else end = mid - 1;
+   }
+
+   int mid_reference = -1;
+   if (end == start) mid_reference = primary_reference[end];
+   else if (end == start + 1) {
+      mid_reference = primary_reference[start];
+      root[mid_reference].RightChildIndex = primary_reference[end];
+      root[root[mid_reference].RightChildIndex].ParentIndex = root[mid_reference].Index;
+   }
+   else if (end == start + 2) {
+      mid_reference = primary_reference[start + 1];
+      root[mid_reference].LeftChildIndex = primary_reference[start];
+      root[mid_reference].RightChildIndex = primary_reference[end];
+      root[root[mid_reference].LeftChildIndex].ParentIndex = root[mid_reference].Index;
+      root[root[mid_reference].RightChildIndex].ParentIndex = root[mid_reference].Index;
+   }
+
+   if (mid_reference != -1) {
+      int warp_num_per_node = total_warp_num >> Depth;
+      int m = warp_index / warp_num_per_node;
+      mid_references[MidReferenceOffset + m] = mid_reference;
+      if (bool(m & 1)) root[last_mid_references[LastMidReferenceOffset + m >> 1]].RightChildIndex = mid_reference;
+      else root[last_mid_references[LastMidReferenceOffset + m >> 1]].LeftChildIndex = mid_reference;
+      root[mid_reference].ParentIndex = root[last_mid_references[LastMidReferenceOffset + m >> 1]].Index;
+   }
+}

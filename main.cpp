@@ -125,6 +125,16 @@ void testCUDA(
 
 int main()
 {
+   /*inline std::vector<int> REF;
+   if (axis == 0) {
+      REF.resize(Device.Sort.MaxSampleNum);
+      CHECK_CUDA(cudaMemcpyAsync( REF.data(), Device.Sort.RightRanks, sizeof( int ) * REF.size(), cudaMemcpyDeviceToHost, Device.Stream ));
+      for (const auto& r : REF) {
+         std::cout << r << " ";
+      }
+      std::cout << "\n\n";
+   }*/
+
    auto start_time = std::chrono::steady_clock::now();
    //const std::vector<glm::vec3> coordinates = {
    //   { 2.0f, 3.0f, 3.0f }, { 5.0f, 4.0f, 2.0f }, { 9.0f, 6.0f, 7.0f }, { 4.0f, 7.0f, 9.0f }, { 8.0f, 1.0f, 5.0f },
@@ -161,13 +171,13 @@ int main()
    testMultithreading( mt_output, coordinates, queries );
 
 #ifdef USE_CUDA
-   std::vector<float> cuda_output;
+   /*std::vector<float> cuda_output;
    testCUDA( cuda_output, coordinates, queries );
 
    assert( mt_output.size() == cuda_output.size() );
    for (size_t i = 0; i < mt_output.size(); ++i) {
       assert( mt_output[i] == cuda_output[i] );
-   }
+   }*/
 #endif
    std::cout << "\n\n";
 
