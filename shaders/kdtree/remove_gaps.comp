@@ -1,4 +1,5 @@
 #version 460
+#extension GL_KHR_shader_subgroup_shuffle : enable
 
 layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 
@@ -20,9 +21,13 @@ void main()
    int warp_lane = index & (WarpSize - 1);
    int offset = warp_index * SizePerWarp;
 
-   int target_offset = 0;
-   for (int i = 0; i < warp_index; ++i) target_offset += unique_num_in_warp[i];
-   int unique_num_in_this_warp = unique_num_in_warp[warp_index];
+   int target_offset = 0, unique_num_in_this_warp = 0;
+   if (warp_lane == 0) {
+      for (int i = 0; i < warp_index; ++i) target_offset += unique_num_in_warp[i];
+      unique_num_in_this_warp = unique_num_in_warp[warp_index];
+   }
+   target_offset = subgroupShuffle( target_offset, 0 );
+   unique_num_in_this_warp = subgroupShuffle( unique_num_in_this_warp, 0 );
 
    for (int i = warp_lane; i < unique_num_in_this_warp; i += WarpSize) {
       target_buffer[target_offset + i] = source_buffer[offset + i];
