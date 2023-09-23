@@ -607,7 +607,8 @@ void RendererGL::build() const
 {
    Object->prepareBuilding();
    const int dim = Object->getDimension();
-   const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(Object->getUniqueNum()) ) ));
+   const int size = Object->getUniqueNum();
+   const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(size) ) ));
    for (int i = 0; i < depth - 1; ++i) {
       partitionDimension( i % dim, i );
    }
@@ -619,7 +620,6 @@ void RendererGL::build() const
          static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
    const int loop_levels = std::max( (depth - 1) - max_controllable_depth_for_warp, 0 );
    const int axis = (depth - 1) % dim;
-   const int size = Object->getUniqueNum();
    const GLuint mid_reference = Object->getMidReferences( (depth - 1) & 1 );
    const GLuint last_mid_reference = Object->getMidReferences( (depth - 2) & 1 );
    for (int loop = 0; loop < (1 << loop_levels); ++loop) {
@@ -646,6 +646,15 @@ void RendererGL::build() const
    Object->releaseBuilding();
 }
 
+void RendererGL::verify() const
+{
+   Object->prepareVerifying();
+   const int size = Object->getUniqueNum();
+   const auto log_size = static_cast<int>(std::floor( std::log2( static_cast<double>(size) ) ));
+
+   Object->releaseVerifying();
+}
+
 void RendererGL::buildKdtree() const
 {
    //const auto& vert = Object->getVertices();
@@ -668,6 +677,12 @@ void RendererGL::buildKdtree() const
    build();
    end = std::chrono::steady_clock::now();
    Timer->Build =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
+
+   start = std::chrono::steady_clock::now();
+   verify();
+   end = std::chrono::steady_clock::now();
+   Timer->Verify =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
 }
 

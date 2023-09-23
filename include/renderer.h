@@ -32,6 +32,7 @@ private:
       double ObjectLoad;
       double Sort;
       double Build;
+      double Verify;
 
       TimeCheck() = default;
    };
@@ -117,6 +118,7 @@ private:
    void sort() const;
    void partitionDimension(int axis, int depth) const;
    void build() const;
+   void verify() const;
    void buildKdtree() const;
    void drawObject() const;
    void drawText(const std::string& text, glm::vec2 start_position) const;

@@ -23,7 +23,7 @@ public:
    static constexpr int SharedSize = WarpSize * WarpSize;
 
    KdtreeGL();
-   ~KdtreeGL() override;
+   ~KdtreeGL() override = default;
 
    void setObject(GLenum draw_mode, const std::string& obj_file_path) override;
    void initialize();
@@ -31,11 +31,14 @@ public:
    void releaseSorting();
    void prepareBuilding();
    void releaseBuilding();
+   void prepareVerifying();
+   void releaseVerifying();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    void setRootNode(int root_node) { RootNode = root_node; }
    [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getUniqueNum() const { return UniqueNum; }
    [[nodiscard]] int getRootNode() const { return RootNode; }
+   [[nodiscard]] int getNodeNum() const { return NodeNum; }
    [[nodiscard]] int getSize() const { return static_cast<int>(Vertices.size()); }
    [[nodiscard]] int getMaxSampleNum() const { return Sort.MaxSampleNum; }
    [[nodiscard]] GLuint getRoot() const { return Root; }
@@ -50,9 +53,9 @@ public:
    [[nodiscard]] GLuint getRightLimits() const { return Sort.RightLimits; }
    [[nodiscard]] GLuint getLeftChildNumInWarp() const { return LeftChildNumInWarp; }
    [[nodiscard]] GLuint getRightChildNumInWarp() const { return RightChildNumInWarp; }
+   [[nodiscard]] GLuint getNodeSums() const { return NodeSums; }
    [[nodiscard]] GLuint getMidReferences(int index) const { return MidReferences[index]; }
    [[nodiscard]] const std::vector<glm::vec3>& getVertices() const { return Vertices; }
-
 
 private:
    struct SortGL
@@ -73,6 +76,7 @@ private:
    const int Dim;
    int UniqueNum;
    int RootNode;
+   int NodeNum;
    SortGL Sort;
    GLuint Root;
    GLuint Coordinates;
@@ -83,5 +87,4 @@ private:
    std::vector<GLuint> Reference;
    std::vector<GLuint> Buffer;
    std::vector<glm::vec3> Vertices;
-
 };

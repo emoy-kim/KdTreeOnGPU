@@ -1,14 +1,9 @@
 #include "kdtree_object.h"
 
 KdtreeGL::KdtreeGL() :
-   Dim( 3 ), UniqueNum( 0 ), RootNode( -1 ), Sort(), Root( 0 ), Coordinates( 0 ), LeftChildNumInWarp( 0 ),
+   Dim( 3 ), UniqueNum( 0 ), RootNode( -1 ), NodeNum( 0 ), Sort(), Root( 0 ), Coordinates( 0 ), LeftChildNumInWarp( 0 ),
    RightChildNumInWarp( 0 ), NodeSums( 0 ), MidReferences{ 0, 0 }, Reference( Dim + 2, 0 ), Buffer( Dim + 2, 0 )
 {
-}
-
-KdtreeGL::~KdtreeGL()
-{
-
 }
 
 void KdtreeGL::setObject(GLenum draw_mode, const std::string& obj_file_path)
@@ -127,4 +122,27 @@ void KdtreeGL::releaseBuilding()
    RightChildNumInWarp = 0;
    MidReferences[0] = 0;
    MidReferences[1] = 0;
+}
+
+void KdtreeGL::prepareVerifying()
+{
+   MidReferences[0] = addCustomBufferObject<int>( "MidReferences0", UniqueNum * 2 );
+   MidReferences[1] = addCustomBufferObject<int>( "MidReferences1", UniqueNum * 2 );
+   NodeSums = addCustomBufferObject<int>( "NodeSums", ThreadBlockNum );
+
+   assert( RootNode >= 0 );
+
+   constexpr int zero = 0;
+   glClearNamedBufferData( NodeSums, GL_R32I, GL_RED, GL_INT, &zero );
+   glClearNamedBufferSubData( MidReferences[0], GL_R32I, 0, sizeof( int ), GL_RED, GL_INT, &RootNode );
+}
+
+void KdtreeGL::releaseVerifying()
+{
+   releaseCustomBuffer( "MidReferences0" );
+   releaseCustomBuffer( "MidReferences1" );
+   releaseCustomBuffer( "NodeSums" );
+   MidReferences[0] = 0;
+   MidReferences[1] = 0;
+   NodeSums = 0;
 }
