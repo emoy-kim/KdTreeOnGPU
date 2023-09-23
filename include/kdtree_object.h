@@ -32,8 +32,10 @@ public:
    void prepareBuilding();
    void releaseBuilding();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
+   void setRootNode(int root_node) { RootNode = root_node; }
    [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getUniqueNum() const { return UniqueNum; }
+   [[nodiscard]] int getRootNode() const { return RootNode; }
    [[nodiscard]] int getSize() const { return static_cast<int>(Vertices.size()); }
    [[nodiscard]] int getMaxSampleNum() const { return Sort.MaxSampleNum; }
    [[nodiscard]] GLuint getRoot() const { return Root; }

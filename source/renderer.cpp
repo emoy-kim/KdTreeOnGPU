@@ -276,6 +276,16 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/remove_partition_gaps.comp").c_str()
    );
    KdtreeBuilder.RemovePartitionGaps->setUniformLocations();
+
+   KdtreeBuilder.SmallPartition->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/small_partition.comp").c_str()
+   );
+   KdtreeBuilder.SmallPartition->setUniformLocations();
+
+   KdtreeBuilder.CopyReference->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/copy_reference.comp").c_str()
+   );
+   KdtreeBuilder.CopyReference->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -572,13 +582,24 @@ void RendererGL::partitionDimension(int axis, int depth) const
          glDispatchCompute( block_num, 1, 1 );
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+         glUseProgram( KdtreeBuilder.CopyReference->getShaderProgram() );
+         KdtreeBuilder.CopyReference->uniform1i( "Size", size );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( r ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
       }
+   }
+
+   if (depth == 0) {
+      int root_node = 0;
+      glGetNamedBufferSubData( Object->getMidReferences( 0 ), 0, sizeof( int ), &root_node );
+      Object->setRootNode( root_node );
    }
 }
 
 void RendererGL::build() const
 {
-   return;
    Object->prepareBuilding();
    const int dim = Object->getDimension();
    const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(Object->getUniqueNum()) ) ));

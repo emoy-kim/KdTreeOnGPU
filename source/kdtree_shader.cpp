@@ -96,3 +96,8 @@ void SmallPartitionShaderGL::setUniformLocations()
    addUniformLocation( "Depth" );
    addUniformLocation( "MaxControllableDepthForWarp" );
 }
+
+void CopyReferenceShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Size" );
+}

@@ -183,3 +183,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class CopyReferenceShaderGL final : public ShaderGL
+{
+public:
+   CopyReferenceShaderGL() = default;
+   ~CopyReferenceShaderGL() override = default;
+
+   CopyReferenceShaderGL(const CopyReferenceShaderGL&) = delete;
+   CopyReferenceShaderGL(const CopyReferenceShaderGL&&) = delete;
+   CopyReferenceShaderGL& operator=(const CopyReferenceShaderGL&) = delete;
+   CopyReferenceShaderGL& operator=(const CopyReferenceShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
