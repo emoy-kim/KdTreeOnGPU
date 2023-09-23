@@ -70,3 +70,12 @@ void RemoveGapsShaderGL::setUniformLocations()
    addUniformLocation( "SizePerWarp" );
    addUniformLocation( "Size" );
 }
+
+void PartitionShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Start" );
+   addUniformLocation( "End" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+   addUniformLocation( "Depth" );
+}

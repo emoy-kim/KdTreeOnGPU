@@ -11,9 +11,11 @@ layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
 uniform int Size;
 uniform int Axis;
 uniform int Dim;
+const int WarpSize = 32;
+const int SharedSize = WarpSize * WarpSize;
 
-shared int shared_reference[1024];
-shared float shared_buffer[1024];
+shared int shared_reference[SharedSize];
+shared float shared_buffer[SharedSize];
 
 float compareSuperKey(in float front_a, in float front_b, in int offset_a, in int offset_b)
 {

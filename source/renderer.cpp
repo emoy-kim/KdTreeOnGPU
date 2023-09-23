@@ -268,6 +268,9 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/remove_gaps.comp").c_str()
    );
    KdtreeBuilder.RemoveGaps->setUniformLocations();
+
+   KdtreeBuilder.Partition->setComputeShader( std::string(shader_directory_path + "/kdtree/partition.comp").c_str() );
+   KdtreeBuilder.Partition->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -471,7 +474,6 @@ void RendererGL::removeDuplicates(int axis) const
    int num = 0;
    glGetNamedBufferSubData( num_after_removal, 0, sizeof( int ), &num );
    Object->setUniqueNum( num );
-   std::cout << Object->getUniqueNum() << std::endl;
 
    Object->releaseCustomBuffer( "NumAfterRemoval" );
    Object->releaseCustomBuffer( "UniqueNumInWarp" );
@@ -490,8 +492,65 @@ void RendererGL::sort() const
       sortByAxis( axis );
       removeDuplicates( axis );
    }
-
    Object->releaseSorting();
+}
+
+void RendererGL::partitionDimension(int axis, int depth) const
+{
+   constexpr int total_thread_num = KdtreeGL::ThreadBlockNum * KdtreeGL::ThreadNum;
+
+   assert( total_thread_num > KdtreeGL::SharedSize / 2  );
+
+   constexpr int block_num = total_thread_num * 2 / KdtreeGL::SharedSize;
+   constexpr int warp_num = total_thread_num / KdtreeGL::WarpSize;
+   const auto max_controllable_depth_for_warp =
+         static_cast<int>(std::floor( std::log2( static_cast<double>(warp_num) ) ));
+   const int dim = Object->getDimension();
+   const int size = Object->getUniqueNum();
+   const GLuint coordinates = Object->getCoordinates();
+   const GLuint mid_reference = Object->getMidReferences( depth & 1 );
+   const GLuint last_mid_reference = depth == 0 ? 0 : Object->getMidReferences( (depth - 1) & 1 );
+   if (depth < max_controllable_depth_for_warp) {
+      for (int i = 1; i < dim; ++i) {
+         int r = i + axis;
+         r = r < dim ? r : r - dim;
+         glUseProgram( KdtreeBuilder.Partition->getShaderProgram() );
+         KdtreeBuilder.Partition->uniform1i( "Start", 0 );
+         KdtreeBuilder.Partition->uniform1i( "End", size - 1 );
+         KdtreeBuilder.Partition->uniform1i( "Axis", axis );
+         KdtreeBuilder.Partition->uniform1i( "Dim", dim );
+         KdtreeBuilder.Partition->uniform1i( "Depth", depth );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftChildNumInWarp() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getRightChildNumInWarp() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getReference( dim ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getReference( dim + 1 ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, mid_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 6, last_mid_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 7, Object->getReference( r ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 8, Object->getReference( axis ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 9, coordinates );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+      }
+   }
+   else {
+
+   }
+}
+
+void RendererGL::build() const
+{
+   return;
+   Object->prepareBuilding();
+   const int dim = Object->getDimension();
+   const auto depth = static_cast<int>(std::floor( std::log2( static_cast<double>(Object->getUniqueNum()) ) ));
+   for (int i = 0; i < depth - 1; ++i) {
+      partitionDimension( i % dim, i );
+   }
+
+   Object->releaseBuilding();
 }
 
 void RendererGL::buildKdtree() const
@@ -510,6 +569,12 @@ void RendererGL::buildKdtree() const
    sort();
    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
    Timer->Sort =
+      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
+
+   start = std::chrono::steady_clock::now();
+   build();
+   end = std::chrono::steady_clock::now();
+   Timer->Build =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
 }
 

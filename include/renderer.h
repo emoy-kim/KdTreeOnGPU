@@ -11,6 +11,7 @@
 #include "light.h"
 #include "kdtree_object.h"
 #include "kdtree_shader.h"
+#include "cuda/kdtree.cuh"
 
 class RendererGL final
 {
@@ -30,6 +31,7 @@ private:
    {
       double ObjectLoad;
       double Sort;
+      double Build;
 
       TimeCheck() = default;
    };
@@ -46,6 +48,7 @@ private:
       std::unique_ptr<MergeReferencesShaderGL> MergeReferences;
       std::unique_ptr<RemoveDuplicatesShaderGL> RemoveDuplicates;
       std::unique_ptr<RemoveGapsShaderGL> RemoveGaps;
+      std::unique_ptr<PartitionShaderGL> Partition;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -57,7 +60,8 @@ private:
          MergeRanksAndIndices( std::make_unique<MergeRanksAndIndicesShaderGL>() ),
          MergeReferences( std::make_unique<MergeReferencesShaderGL>() ),
          RemoveDuplicates( std::make_unique<RemoveDuplicatesShaderGL>() ),
-         RemoveGaps( std::make_unique<RemoveGapsShaderGL>() )
+         RemoveGaps( std::make_unique<RemoveGapsShaderGL>() ),
+         Partition( std::make_unique<PartitionShaderGL>() )
          {}
    };
 
@@ -103,6 +107,8 @@ private:
    void sortByAxis(int axis) const;
    void removeDuplicates(int axis) const;
    void sort() const;
+   void partitionDimension(int axis, int depth) const;
+   void build() const;
    void buildKdtree() const;
    void drawObject() const;
    void drawText(const std::string& text, glm::vec2 start_position) const;

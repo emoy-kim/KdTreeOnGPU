@@ -29,6 +29,8 @@ public:
    void initialize();
    void prepareSorting();
    void releaseSorting();
+   void prepareBuilding();
+   void releaseBuilding();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getUniqueNum() const { return UniqueNum; }
@@ -44,6 +46,9 @@ public:
    [[nodiscard]] GLuint getRightRanks() const { return Sort.RightRanks; }
    [[nodiscard]] GLuint getLeftLimits() const { return Sort.LeftLimits; }
    [[nodiscard]] GLuint getRightLimits() const { return Sort.RightLimits; }
+   [[nodiscard]] GLuint getLeftChildNumInWarp() const { return LeftChildNumInWarp; }
+   [[nodiscard]] GLuint getRightChildNumInWarp() const { return RightChildNumInWarp; }
+   [[nodiscard]] GLuint getMidReferences(int index) const { return MidReferences[index]; }
    [[nodiscard]] const std::vector<glm::vec3>& getVertices() const { return Vertices; }
 
 

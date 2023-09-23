@@ -141,3 +141,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class PartitionShaderGL final : public ShaderGL
+{
+public:
+   PartitionShaderGL() = default;
+   ~PartitionShaderGL() override = default;
+
+   PartitionShaderGL(const PartitionShaderGL&) = delete;
+   PartitionShaderGL(const PartitionShaderGL&&) = delete;
+   PartitionShaderGL& operator=(const PartitionShaderGL&) = delete;
+   PartitionShaderGL& operator=(const PartitionShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

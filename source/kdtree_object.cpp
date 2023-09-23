@@ -96,10 +96,35 @@ void KdtreeGL::releaseSorting()
    releaseCustomBuffer( "RightLimits" );
    releaseCustomBuffer( "SortReference" );
    releaseCustomBuffer( "SortBuffer" );
+   for (int i = 0; i <= Dim; ++i) {
+      releaseCustomBuffer( "Buffer" );
+      Buffer[i] = 0;
+   }
    Sort.LeftRanks = 0;
    Sort.RightRanks = 0;
    Sort.LeftLimits = 0;
    Sort.RightLimits = 0;
    Sort.Reference = 0;
    Sort.Buffer = 0;
+}
+
+void KdtreeGL::prepareBuilding()
+{
+   constexpr int warp_num = ThreadBlockNum * ThreadNum / WarpSize;
+   LeftChildNumInWarp = addCustomBufferObject<int>( "LeftChildNumInWarp", warp_num );
+   RightChildNumInWarp = addCustomBufferObject<int>( "RightChildNumInWarp", warp_num );
+   MidReferences[0] = addCustomBufferObject<int>( "MidReferences0", UniqueNum );
+   MidReferences[1] = addCustomBufferObject<int>( "MidReferences1", UniqueNum );
+}
+
+void KdtreeGL::releaseBuilding()
+{
+   releaseCustomBuffer( "LeftChildNumInWarp" );
+   releaseCustomBuffer( "RightChildNumInWarp" );
+   releaseCustomBuffer( "MidReferences0" );
+   releaseCustomBuffer( "MidReferences1" );
+   LeftChildNumInWarp = 0;
+   RightChildNumInWarp = 0;
+   MidReferences[0] = 0;
+   MidReferences[1] = 0;
 }
