@@ -1,6 +1,5 @@
 #version 460
-#extension GL_NV_gpu_shader5 : enable
-#extension GL_ARB_shader_ballot : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
 
 layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 
@@ -64,7 +63,7 @@ void main()
       else t = 0.0f;
       in_offset += WarpSize;
 
-      unique_mask = int(ballotARB( t > 0.0f ));
+      unique_mask = int(subgroupBallot( t > 0.0f ).x);
       if (t > 0.0f) {
          int i = bitCount( unique_mask & precede_mask );
          shared_buffer[shared_base + i] = v;
@@ -93,7 +92,7 @@ void main()
       else t = 0.0f;
       in_offset += WarpSize;
 
-      unique_mask = int(ballotARB( t > 0.0f ));
+      unique_mask = int(subgroupBallot( t > 0.0f ).x);
       if (t > 0.0f) {
          int i = (write_num + bitCount( unique_mask & precede_mask )) & shared_address_mask;
          shared_buffer[shared_base + i] = v;

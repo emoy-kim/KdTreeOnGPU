@@ -50,11 +50,20 @@ void KdtreeGL::initialize()
 {
    const auto size = static_cast<int>(Vertices.size());
    Coordinates = addCustomBufferObject<float>( "Coordinates", Dim * (size + 1) );
-   glNamedBufferSubData( Coordinates, 0, Dim * size * sizeof( float ), glm::value_ptr( Vertices[0] ) );
+   glNamedBufferSubData(
+      Coordinates, 0,
+      static_cast<int>(Dim * size * sizeof( float )),
+      glm::value_ptr( Vertices[0] )
+   );
 
    float max_value[Dim];
    for (int i = 0; i < Dim; ++i) max_value[i] = std::numeric_limits<float>::max();
-   glNamedBufferSubData( Coordinates, Dim * size * sizeof( float ), Dim * sizeof( float ), max_value );
+   glNamedBufferSubData(
+      Coordinates,
+      static_cast<int>(Dim * size * sizeof( float )),
+      static_cast<int>(Dim * sizeof( float )),
+      max_value
+   );
 
    Root = addCustomBufferObject<KdtreeNodeGL>( "Root", size );
 }

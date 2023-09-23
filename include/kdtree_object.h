@@ -44,6 +44,7 @@ public:
    [[nodiscard]] GLuint getRightRanks() const { return Sort.RightRanks; }
    [[nodiscard]] GLuint getLeftLimits() const { return Sort.LeftLimits; }
    [[nodiscard]] GLuint getRightLimits() const { return Sort.RightLimits; }
+   [[nodiscard]] const std::vector<glm::vec3>& getVertices() const { return Vertices; }
 
 
 private:

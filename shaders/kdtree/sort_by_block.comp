@@ -26,13 +26,13 @@ float compareSuperKey(in float front_a, in float front_b, in int offset_a, in in
    return difference;
 }
 
-int search(in int r, in float v, in int offset, in int step, in bool inclusive)
+int search(in int r, in float v, in int offset, in int length, in int step, in bool inclusive)
 {
-   if (step == 0) return 0;
+   if (length == 0) return 0;
 
    int i = 0;
    while (step > 0) {
-      int j = min( i + step, step );
+      int j = min( i + step, length );
       float t = compareSuperKey( shared_buffer[offset + j - 1], v, shared_reference[offset + j - 1] * Dim, r * Dim );
       if (t < 0.0f || (inclusive && t == 0.0f)) i = j;
       step >>= 1;
@@ -59,10 +59,10 @@ void main()
 
       int reference_x = shared_reference[offset + i];
       float buffer_x = shared_buffer[offset + i];
-      int x = search( reference_x, buffer_x, offset + step, step, false ) + i;
+      int x = search( reference_x, buffer_x, offset + step, step, step, false ) + i;
       int reference_y = shared_reference[offset + i + step];
       float buffer_y = shared_buffer[offset + i + step];
-      int y = search( reference_y, buffer_y, offset + i + step, step, true ) + i;
+      int y = search( reference_y, buffer_y, offset, step, step, true ) + i;
 
       memoryBarrierShared();
       barrier();

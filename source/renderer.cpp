@@ -315,7 +315,7 @@ void RendererGL::sortByAxis(int axis) const
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getReference( axis ) );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getBuffer( axis ) );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
-      glDispatchCompute( KdtreeGL::ThreadBlockNum, 1, 1 );
+      glDispatchCompute( block_num, 1, 1 );
       glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
    }
    const int remained_size = size % KdtreeGL::SharedSize;
@@ -343,96 +343,99 @@ void RendererGL::sortByAxis(int axis) const
       if (buffer_index == 0) {
          glCopyNamedBufferSubData(
             buffers[0], buffers[1],
-            sizeof( float ) * start_offset, sizeof( float ) * start_offset,
-            sizeof( float ) * remained_size
+            static_cast<int>(sizeof( float ) * start_offset),
+            static_cast<int>(sizeof( float ) * start_offset),
+            static_cast<int>(sizeof( float ) * remained_size)
          );
          glCopyNamedBufferSubData(
             references[0], references[1],
-            sizeof( int ) * start_offset, sizeof( int ) * start_offset,
-            sizeof( int ) * remained_size
+            static_cast<int>(sizeof( int ) * start_offset),
+            static_cast<int>(sizeof( int ) * start_offset),
+            static_cast<int>(sizeof( int ) * remained_size)
+         );
+      }
+   }
+
+   for (int sorted_size = KdtreeGL::SharedSize; sorted_size < size; sorted_size <<= 1) {
+      constexpr int thread_num = KdtreeGL::SampleStride * 2;
+      const int remained_threads = size % (sorted_size * 2);
+      const int total_thread_num = remained_threads > sorted_size ?
+         (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
+      block_num = divideUp( total_thread_num, thread_num );
+      glUseProgram( KdtreeBuilder.GenerateSampleRanks->getShaderProgram() );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( "SortedSize", sorted_size );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Size", size );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Axis", axis );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Dim", dim );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( "TotalThreadNum", total_thread_num );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftRanks() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
+      glDispatchCompute( block_num, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+      glUseProgram( KdtreeBuilder.MergeRanksAndIndices->getShaderProgram() );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "SortedSize", sorted_size );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "Size", size );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "TotalThreadNum", total_thread_num );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftLimits() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftRanks() );
+      glDispatchCompute( block_num, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRightLimits() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
+      glDispatchCompute( block_num, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+      const int merge_pairs = remained_threads > sorted_size ?
+         divideUp( size, KdtreeGL::SampleStride ) : (size - remained_threads) / KdtreeGL::SampleStride;
+      glUseProgram( KdtreeBuilder.MergeReferences->getShaderProgram() );
+      KdtreeBuilder.MergeReferences->uniform1i( "SortedSize", sorted_size );
+      KdtreeBuilder.MergeReferences->uniform1i( "Size", size );
+      KdtreeBuilder.MergeReferences->uniform1i( "Axis", axis );
+      KdtreeBuilder.MergeReferences->uniform1i( "Dim", dim );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, out_reference );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, out_buffer );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, Object->getLeftLimits() );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 6, Object->getRightLimits() );
+      glDispatchCompute( merge_pairs, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+      if (remained_threads <= sorted_size) {
+         glCopyNamedBufferSubData(
+            in_reference, out_reference,
+            static_cast<int>(sizeof( int ) * (size - remained_threads)),
+            static_cast<int>(sizeof( int ) * (size - remained_threads)),
+            static_cast<int>(sizeof( int ) * remained_threads)
+         );
+         glCopyNamedBufferSubData(
+            in_buffer, out_buffer,
+            static_cast<int>(sizeof( float ) * (size - remained_threads)),
+            static_cast<int>(sizeof( float ) * (size - remained_threads)),
+            static_cast<int>(sizeof( float ) * remained_threads)
          );
       }
 
-      for (int sorted_size = KdtreeGL::SharedSize; sorted_size < size; sorted_size <<= 1) {
-         constexpr int thread_num = KdtreeGL::SampleStride * 2;
-         const int remained_threads = size % (sorted_size * 2);
-         const int total_thread_num = remained_threads > sorted_size ?
-            (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
-         block_num = divideUp( total_thread_num, thread_num );
-         glUseProgram( KdtreeBuilder.GenerateSampleRanks->getShaderProgram() );
-         KdtreeBuilder.GenerateSampleRanks->uniform1i( "SortedSize", sorted_size );
-         KdtreeBuilder.GenerateSampleRanks->uniform1i( "Size", size );
-         KdtreeBuilder.GenerateSampleRanks->uniform1i( "Axis", axis );
-         KdtreeBuilder.GenerateSampleRanks->uniform1i( "Dim", dim );
-         KdtreeBuilder.GenerateSampleRanks->uniform1i( "TotalThreadNum", total_thread_num );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftRanks() );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
-         glDispatchCompute( block_num, 1, 1 );
-         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
-
-         glUseProgram( KdtreeBuilder.MergeRanksAndIndices->getShaderProgram() );
-         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "SortedSize", sorted_size );
-         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "Size", size );
-         KdtreeBuilder.MergeRanksAndIndices->uniform1i( "TotalThreadNum", total_thread_num );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftLimits() );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftRanks() );
-         glDispatchCompute( block_num, 1, 1 );
-         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRightLimits() );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
-         glDispatchCompute( block_num, 1, 1 );
-         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
-
-         const int merge_pairs = remained_threads > sorted_size ?
-            divideUp( size, KdtreeGL::SampleStride ) : (size - remained_threads) / KdtreeGL::SampleStride;
-         glUseProgram( KdtreeBuilder.MergeReferences->getShaderProgram() );
-         KdtreeBuilder.MergeReferences->uniform1i( "SortedSize", sorted_size );
-         KdtreeBuilder.MergeReferences->uniform1i( "Size", size );
-         KdtreeBuilder.MergeReferences->uniform1i( "Axis", axis );
-         KdtreeBuilder.MergeReferences->uniform1i( "Dim", dim );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, out_reference );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, out_buffer );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, in_buffer );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, coordinates );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, Object->getLeftLimits() );
-         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 6, Object->getRightLimits() );
-         glDispatchCompute( merge_pairs, 1, 1 );
-         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
-
-         if (remained_threads <= sorted_size) {
-            glCopyNamedBufferSubData(
-               in_reference, out_reference,
-               sizeof( int ) * (size - remained_threads), sizeof( int ) * (size - remained_threads),
-               sizeof( int ) * remained_threads
-            );
-            glCopyNamedBufferSubData(
-               in_buffer, out_buffer,
-               sizeof( float ) * (size - remained_threads), sizeof( float ) * (size - remained_threads),
-               sizeof( float ) * remained_threads
-            );
-         }
-
-         std::swap( in_reference, out_reference );
-         std::swap( in_buffer, out_buffer );
-      }
+      std::swap( in_reference, out_reference );
+      std::swap( in_buffer, out_buffer );
    }
 }
 
 void RendererGL::removeDuplicates(int axis) const
 {
-   const int size = Object->getSize();
-   const int dim = Object->getDimension();
-   const int source_index = dim;
-   const int target_index = axis;
-
    constexpr int total_thread_num = KdtreeGL::ThreadBlockNum * KdtreeGL::ThreadNum;
 
    assert( total_thread_num > KdtreeGL::SharedSize / 2  );
 
+   const int size = Object->getSize();
+   const int dim = Object->getDimension();
+   const int source_index = dim;
+   const int target_index = axis;
    constexpr int block_num = total_thread_num * 2 / KdtreeGL::SharedSize;
    constexpr int segment = total_thread_num / KdtreeGL::WarpSize;
    const int size_per_warp = divideUp( size, segment );
@@ -493,6 +496,9 @@ void RendererGL::sort() const
 
 void RendererGL::buildKdtree() const
 {
+   //const auto& vert = Object->getVertices();
+   //cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
+
    Object->initialize();
    glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );
    KdtreeBuilder.Initialize->uniform1i( "Size", Object->getSize() );

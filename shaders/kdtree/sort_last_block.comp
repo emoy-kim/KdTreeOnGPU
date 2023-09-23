@@ -36,8 +36,8 @@ void main()
    for (int i = 0; i < end; ++i) {
       bool take_from_left = left < mid && (right >= end ||
          compareSuperKey(
-            source_reference[StartOffset + left] * Dim,
-            source_reference[StartOffset + right] * Dim
+            source_reference[StartOffset + index + left] * Dim,
+            source_reference[StartOffset + index + right] * Dim
          ) < 0.0f);
       if (take_from_left) {
          target_buffer[StartOffset + index + i] = source_buffer[StartOffset + index + left];
