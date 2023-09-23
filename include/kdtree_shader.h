@@ -169,3 +169,17 @@ public:
 
    void setUniformLocations() override;
 };
+
+class SmallPartitionShaderGL final : public ShaderGL
+{
+public:
+   SmallPartitionShaderGL() = default;
+   ~SmallPartitionShaderGL() override = default;
+
+   SmallPartitionShaderGL(const SmallPartitionShaderGL&) = delete;
+   SmallPartitionShaderGL(const SmallPartitionShaderGL&&) = delete;
+   SmallPartitionShaderGL& operator=(const SmallPartitionShaderGL&) = delete;
+   SmallPartitionShaderGL& operator=(const SmallPartitionShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};

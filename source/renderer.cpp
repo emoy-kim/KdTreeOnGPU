@@ -552,7 +552,27 @@ void RendererGL::partitionDimension(int axis, int depth) const
       }
    }
    else {
+      for (int i = 1; i < dim; ++i) {
+         int r = i + axis;
+         r = r < dim ? r : r - dim;
+         glUseProgram( KdtreeBuilder.SmallPartition->getShaderProgram() );
+         KdtreeBuilder.SmallPartition->uniform1i( "Start", 0 );
+         KdtreeBuilder.SmallPartition->uniform1i( "End", size - 1 );
+         KdtreeBuilder.SmallPartition->uniform1i( "Axis", axis );
+         KdtreeBuilder.SmallPartition->uniform1i( "Dim", dim );
+         KdtreeBuilder.SmallPartition->uniform1i( "Depth", depth );
+         KdtreeBuilder.SmallPartition->uniform1i( "MaxControllableDepthForWarp", max_controllable_depth_for_warp );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, mid_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, last_mid_reference );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getReference( r ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 5, Object->getReference( axis ) );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 6, coordinates );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
+      }
    }
 }
 

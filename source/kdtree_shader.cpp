@@ -86,3 +86,13 @@ void RemovePartitionGapsShaderGL::setUniformLocations()
    addUniformLocation( "End" );
    addUniformLocation( "Depth" );
 }
+
+void SmallPartitionShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Start" );
+   addUniformLocation( "End" );
+   addUniformLocation( "Axis" );
+   addUniformLocation( "Dim" );
+   addUniformLocation( "Depth" );
+   addUniformLocation( "MaxControllableDepthForWarp" );
+}

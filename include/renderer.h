@@ -50,6 +50,7 @@ private:
       std::unique_ptr<RemoveGapsShaderGL> RemoveGaps;
       std::unique_ptr<PartitionShaderGL> Partition;
       std::unique_ptr<RemovePartitionGapsShaderGL> RemovePartitionGaps;
+      std::unique_ptr<SmallPartitionShaderGL> SmallPartition;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -63,7 +64,8 @@ private:
          RemoveDuplicates( std::make_unique<RemoveDuplicatesShaderGL>() ),
          RemoveGaps( std::make_unique<RemoveGapsShaderGL>() ),
          Partition( std::make_unique<PartitionShaderGL>() ),
-         RemovePartitionGaps( std::make_unique<RemovePartitionGapsShaderGL>() )
+         RemovePartitionGaps( std::make_unique<RemovePartitionGapsShaderGL>() ),
+         SmallPartition( std::make_unique<SmallPartitionShaderGL>() )
          {}
    };
 

@@ -1,0 +1,151 @@
+#version 460
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+struct KdtreeNode
+{
+   int Index;
+   int ParentIndex;
+   int LeftChildIndex;
+   int RightChildIndex;
+};
+
+layout (binding = 0, std430) buffer Root { KdtreeNode root[]; };
+layout (binding = 1, std430) buffer OutReference { int target_reference[]; };
+layout (binding = 2, std430) buffer MidReferences { int mid_references[]; };
+layout (binding = 3, std430) buffer LastMidReferences { int last_mid_references[]; };
+layout (binding = 4, std430) buffer InReference { int source_reference[]; };
+layout (binding = 5, std430) buffer PrimaryReference { int primary_reference[]; };
+layout (binding = 6, std430) buffer Coordinates { float coordinates[]; };
+
+uniform int Start;
+uniform int End;
+uniform int Axis;
+uniform int Dim;
+uniform int Depth;
+uniform int MaxControllableDepthForWarp;
+const int WarpSize = 32;
+const int SharedSize = WarpSize * WarpSize;
+
+shared int left_reference[SharedSize];
+shared int right_reference[SharedSize];
+
+float compareSuperKey(in int offset_a, in int offset_b)
+{
+   float difference = coordinates[offset_a + Axis] - coordinates[offset_b + Axis];
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + Axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - coordinates[offset_b + r];
+   }
+   return difference;
+}
+
+void runPartition(
+   in int left_offset,
+   in int right_offset,
+   in int mid_reference,
+   in int size_per_warp,
+   in int partition_size,
+   in int warp_num_per_node
+)
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int warp_index = (index / WarpSize) & (warp_num_per_node - 1);
+   int warp_lane = index & (WarpSize - 1);
+   int offset = warp_index * size_per_warp, in_offset = left_offset + offset;
+   size_per_warp = min( size_per_warp, partition_size - offset );
+
+   const int warps_per_block = WarpSize / 2;
+   const int shared_address_mask = WarpSize * 2 - 1;
+   int shared_base = WarpSize * 2 * ((index / WarpSize) % warps_per_block);
+   int precede_mask = (1 << warp_lane) - 1;
+
+   float t;
+   int r, left_write_num = 0, right_write_num = 0;
+   for (int processed_size = 0; processed_size < size_per_warp; processed_size += WarpSize) {
+      if (processed_size + warp_lane < size_per_warp) {
+         r = source_reference[in_offset + warp_lane];
+         t = compareSuperKey( r * Dim, mid_reference * Dim );
+      }
+      else t = 0.0f;
+      in_offset += WarpSize;
+
+      int unique_mask = int(subgroupBallot( t < 0.0f ).x);
+      if (t < 0.0f) {
+         int i = (left_write_num + bitCount( unique_mask & precede_mask )) & shared_address_mask;
+         left_reference[shared_base + i] = r;
+      }
+
+      int n = bitCount( unique_mask );
+      if (((left_write_num ^ (left_write_num + n)) & WarpSize) != 0) {
+         int i = (left_write_num & ~(WarpSize - 1)) + warp_lane;
+         target_reference[left_offset + offset + i] =
+            left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
+      }
+      left_write_num += n;
+
+      unique_mask = int(subgroupBallot( t > 0.0f ).x);
+      if (t > 0.0f) {
+         int i = (right_write_num + bitCount( unique_mask & precede_mask )) & shared_address_mask;
+         right_reference[shared_base + i] = r;
+      }
+
+      n = bitCount( unique_mask );
+      if (((right_write_num ^ (right_write_num + n)) & WarpSize) != 0) {
+         int i = (right_write_num & ~(WarpSize - 1)) + warp_lane;
+         target_reference[right_offset + offset + i] =
+            right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
+      }
+      right_write_num += n;
+   }
+
+   if (warp_lane < (left_write_num & (WarpSize - 1))) {
+      int i = (left_write_num & ~(WarpSize - 1)) + warp_lane;
+      target_reference[left_offset + offset + i] =
+         left_reference[shared_base + (left_write_num & WarpSize) + warp_lane];
+   }
+   if (warp_lane < (right_write_num & (WarpSize - 1))) {
+      int i = (right_write_num & ~(WarpSize - 1)) + warp_lane;
+      target_reference[right_offset + offset + i] =
+         right_reference[shared_base + (right_write_num & WarpSize) + warp_lane];
+   }
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int total_warp_num = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x / WarpSize);
+   int warp_index = index / WarpSize;
+   int warp_lane = index & (WarpSize - 1);
+   int loop_levels = Depth - MaxControllableDepthForWarp;
+   for (int loop = 0; loop < (1 << loop_levels); ++loop) {
+      int start = Start, end = End, mid;
+      for (int i = 1; i <= loop_levels; ++i) {
+         mid = start + (end - start) / 2;
+         if (bool(loop & (1 << (loop_levels - i)))) start = mid + 1;
+         else end = mid - 1;
+      }
+      for (int i = 1; i <= MaxControllableDepthForWarp; ++i) {
+         mid = start + (end - start) / 2;
+         if (bool(warp_index & (total_warp_num >> i))) start = mid + 1;
+         else end = mid - 1;
+      }
+      mid = start + (end - start) / 2;
+
+      int partition_size = end - start + 1;
+      int mid_reference = primary_reference[mid];
+      runPartition( start, mid + 1, mid_reference, partition_size, partition_size, 1 );
+
+      if (warp_lane == 0) {
+         int m = warp_index + total_warp_num * loop;
+         mid_references[m] = mid_reference;
+         if (Depth > 0) {
+            if (bool(m & 1)) root[last_mid_references[m >> 1]].RightChildIndex = mid_reference;
+            else root[last_mid_references[m >> 1]].LeftChildIndex = mid_reference;
+            root[mid_reference].ParentIndex = root[last_mid_references[m >> 1]].Index;
+         }
+      }
+   }
+}
