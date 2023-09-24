@@ -3,7 +3,7 @@
 RendererGL::RendererGL() :
    Window( nullptr ), Pause( false ), UpdateQuery( false ), RenderFounds( false ), ActiveSearching( false ),
    FrameWidth( 1024 ), FrameHeight( 1024 ), FoundPointNum( 0 ), NeighborNum( 10 ), SearchRadius( 10.0f ),
-   ClickedPoint( -1, -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
+   QueryPoint( -1 ), ClickedPoint( -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
    Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
    MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
    TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
@@ -206,6 +206,8 @@ void RendererGL::mouse(GLFWwindow* window, int button, int action, int mods)
          glfwGetCursorPos( window, &x, &y );
          Renderer->ClickedPoint.x = static_cast<int>(std::round( x ));
          Renderer->ClickedPoint.y = static_cast<int>(std::round( y ));
+         Renderer->QueryPoint.x = Renderer->ClickedPoint.x;
+         Renderer->QueryPoint.y = Renderer->FrameHeight - Renderer->ClickedPoint.y;
          Renderer->RenderFounds = true;
          Renderer->UpdateQuery = true;
       }
@@ -792,18 +794,18 @@ void RendererGL::buildKdtree() const
 
 bool RendererGL::getQuery(glm::vec3& query)
 {
-   assert( 0 <= ClickedPoint.x && ClickedPoint.x < FrameWidth );
-   assert( 0 <= ClickedPoint.y && ClickedPoint.y < FrameHeight );
+   assert( 0 <= QueryPoint.x && QueryPoint.x < FrameWidth );
+   assert( 0 <= QueryPoint.y && QueryPoint.y < FrameHeight );
 
    float depth;
    glBindFramebuffer( GL_FRAMEBUFFER, 0 );
-   glReadPixels( ClickedPoint.x, FrameHeight - ClickedPoint.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth );
+   glReadPixels( QueryPoint.x, QueryPoint.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth );
    if (depth == 1.0f) return false;
 
    const glm::mat4 to_eye = glm::inverse( MainCamera->getProjectionMatrix() * MainCamera->getViewMatrix() );
    const glm::vec4 ndc_point(
-      2.0f * static_cast<float>(ClickedPoint.x) / static_cast<float>(FrameWidth) - 1.0f,
-      2.0f * static_cast<float>(FrameHeight - ClickedPoint.y) / static_cast<float>(FrameHeight) - 1.0f,
+      2.0f * static_cast<float>(QueryPoint.x) / static_cast<float>(FrameWidth) - 1.0f,
+      2.0f * static_cast<float>(QueryPoint.y) / static_cast<float>(FrameHeight) - 1.0f,
       2.0f * depth - 1.0f,
       1.0f
    );

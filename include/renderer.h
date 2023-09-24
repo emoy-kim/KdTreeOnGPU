@@ -11,7 +11,6 @@
 #include "light.h"
 #include "kdtree_object.h"
 #include "kdtree_shader.h"
-#include "cuda/kdtree.cuh"
 
 class RendererGL final
 {
@@ -95,6 +94,7 @@ private:
    int FoundPointNum;
    int NeighborNum;
    float SearchRadius;
+   glm::ivec2 QueryPoint;
    glm::ivec2 ClickedPoint;
    std::unique_ptr<TextGL> Texter;
    std::unique_ptr<LightGL> Lights;

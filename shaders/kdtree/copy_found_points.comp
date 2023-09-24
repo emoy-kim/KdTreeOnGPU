@@ -1,9 +1,8 @@
 #version 460
-#extension GL_KHR_shader_subgroup_ballot : enable
 
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-layout (binding = 0, std430) buffer VBO { vec3 vbo[]; };
+layout (binding = 0, std430) buffer VBO { float vbo[]; };
 layout (binding = 1, std430) buffer Lists { int lists[]; };
 layout (binding = 2, std430) buffer ListLengths { int list_lengths[]; };
 layout (binding = 3, std430) buffer Coordinates { float coordinates[]; };
@@ -16,9 +15,13 @@ void main()
    int index = int(gl_GlobalInvocationID.x);
    if (index >= 1) return;
 
-   vbo[0] = vec3(queries[0], queries[1], queries[2]);
+   vbo[0] = queries[0];
+   vbo[1] = queries[1];
+   vbo[2] = queries[2];
    for (int i = 0; i < list_lengths[0]; ++i) {
       int j = lists[i] * Dim;
-      vbo[i + 1] = vec3(coordinates[j], coordinates[j + 1], coordinates[j + 2]);
+      vbo[(i + 1) * Dim] = coordinates[j];
+      vbo[(i + 1) * Dim + 1] = coordinates[j + 1];
+      vbo[(i + 1) * Dim + 2] = coordinates[j + 2];
    }
 }
