@@ -1,11 +1,13 @@
 #include "renderer.h"
 
 RendererGL::RendererGL() :
-   Window( nullptr ), Pause( false ), FrameWidth( 1024 ), FrameHeight( 1024 ), ClickedPoint( -1, -1 ),
-   Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ), Object( std::make_unique<KdtreeGL>() ),
+   Window( nullptr ), Pause( false ), FrameWidth( 1024 ), FrameHeight( 1024 ), NeighborNum( 10 ), SearchRadius( 10.0f ),
+   ClickedPoint( -1, -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
+   Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
    MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
-   TextShader( std::make_unique<ShaderGL>() ), SceneShader( std::make_unique<ShaderGL>() ),
-   Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder()
+   TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
+   SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
+   SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
 
 {
    Renderer = this;
@@ -102,6 +104,42 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
    if (action != GLFW_PRESS) return;
 
    switch (key) {
+      case GLFW_KEY_1:
+         if (!Renderer->Pause) {
+            Renderer->SearchAlgorithm = SEARCH_ALGORITHM::RADIUS;
+            std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
+         }
+         break;
+      case GLFW_KEY_2:
+         if (!Renderer->Pause) {
+            Renderer->SearchAlgorithm = SEARCH_ALGORITHM::KNN;
+            std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
+         }
+         break;
+      case GLFW_KEY_UP:
+         if (!Renderer->Pause) {
+            if (Renderer->SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) {
+               Renderer->SearchRadius += std::min( Renderer->SearchRadius + 1.0f, 1000.0f );
+               std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
+            }
+            else {
+               Renderer->NeighborNum += std::min( Renderer->NeighborNum + 1, 100 );
+               std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
+            }
+         }
+         break;
+      case GLFW_KEY_DOWN:
+         if (!Renderer->Pause) {
+            if (Renderer->SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) {
+               Renderer->SearchRadius += std::max( Renderer->SearchRadius - 1.0f, 10.0f );
+               std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
+            }
+            else {
+               Renderer->NeighborNum += std::max( Renderer->NeighborNum - 1, 1 );
+               std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
+            }
+         }
+         break;
       case GLFW_KEY_C:
          Renderer->writeFrame();
          std::cout << ">> Framebuffer Captured\n";
@@ -219,6 +257,7 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/scene_shader.frag").c_str()
    );
    TextShader->setTextUniformLocations();
+   PointShader->setPointUniformLocations();
    SceneShader->setSceneUniformLocations( Lights->getTotalLightNum() );
 
    KdtreeBuilder.Initialize->setComputeShader( std::string(shader_directory_path + "/kdtree/initialize.comp").c_str() );

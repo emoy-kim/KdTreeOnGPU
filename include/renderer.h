@@ -27,6 +27,8 @@ public:
    void play();
 
 private:
+   enum class SEARCH_ALGORITHM { RADIUS = 0, KNN };
+
    struct TimeCheck
    {
       double ObjectLoad;
@@ -83,16 +85,21 @@ private:
    bool Pause;
    int FrameWidth;
    int FrameHeight;
+   int NeighborNum;
+   float SearchRadius;
    glm::ivec2 ClickedPoint;
    std::unique_ptr<TextGL> Texter;
    std::unique_ptr<LightGL> Lights;
    std::unique_ptr<KdtreeGL> Object;
+   std::unique_ptr<ObjectGL> FoundPoints;
    std::unique_ptr<CameraGL> MainCamera;
    std::unique_ptr<CameraGL> TextCamera;
    std::unique_ptr<ShaderGL> TextShader;
+   std::unique_ptr<ShaderGL> PointShader;
    std::unique_ptr<ShaderGL> SceneShader;
    std::unique_ptr<TimeCheck> Timer;
    KdtreeBuild KdtreeBuilder;
+   SEARCH_ALGORITHM SearchAlgorithm;
 
    // 16 and 32 do well, anything in between or below is bad.
    // 32 seems to do well on laptop/desktop Windows Intel and on NVidia/AMD as well.

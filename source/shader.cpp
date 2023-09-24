@@ -126,6 +126,12 @@ void ShaderGL::setTextUniformLocations()
    Location.Texture[0] = glGetUniformLocation( ShaderProgram, "BaseTexture" );
 }
 
+void ShaderGL::setPointUniformLocations()
+{
+   setBasicTransformationUniforms();
+   addUniformLocation( "Color" );
+}
+
 void ShaderGL::setSceneUniformLocations(int light_num)
 {
    setBasicTransformationUniforms();
