@@ -1,13 +1,13 @@
 #include "renderer.h"
 
 RendererGL::RendererGL() :
-   Window( nullptr ), Pause( false ), FrameWidth( 1024 ), FrameHeight( 1024 ), NeighborNum( 10 ), SearchRadius( 10.0f ),
-   ClickedPoint( -1, -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
-   Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
-   MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
-   TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
-   SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
-   SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
+   Window( nullptr ), Pause( false ), UpdateQuery( false ), RenderFounds( false ), FrameWidth( 1024 ),
+   FrameHeight( 1024 ), FoundPointNum( 1 ), NeighborNum( 10 ), SearchRadius( 10.0f ), ClickedPoint( -1, -1 ),
+   Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ), Object( std::make_unique<KdtreeGL>() ),
+   FoundPoints( std::make_unique<ObjectGL>() ), MainCamera( std::make_unique<CameraGL>() ),
+   TextCamera( std::make_unique<CameraGL>() ), TextShader( std::make_unique<ShaderGL>() ),
+   PointShader( std::make_unique<ShaderGL>() ), SceneShader( std::make_unique<ShaderGL>() ),
+   Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(), SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
 
 {
    Renderer = this;
@@ -106,39 +106,45 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
    switch (key) {
       case GLFW_KEY_1:
          if (!Renderer->Pause) {
+            Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::RADIUS;
             std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
          }
          break;
       case GLFW_KEY_2:
          if (!Renderer->Pause) {
+            Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::KNN;
             std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
          }
          break;
       case GLFW_KEY_UP:
-         if (!Renderer->Pause) {
+         if (!Renderer->Pause && Renderer->RenderFounds) {
             if (Renderer->SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) {
-               Renderer->SearchRadius += std::min( Renderer->SearchRadius + 1.0f, 1000.0f );
+               Renderer->SearchRadius = std::min( Renderer->SearchRadius + 1.0f, 1000.0f );
                std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
             }
             else {
-               Renderer->NeighborNum += std::min( Renderer->NeighborNum + 1, 100 );
-               std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
+               Renderer->NeighborNum = std::min( Renderer->NeighborNum + 1, 100 );
+               std::cout << ">> Search Points with " << Renderer->NeighborNum << "-nn\n";
             }
          }
          break;
       case GLFW_KEY_DOWN:
-         if (!Renderer->Pause) {
+         if (!Renderer->Pause && Renderer->RenderFounds) {
             if (Renderer->SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) {
-               Renderer->SearchRadius += std::max( Renderer->SearchRadius - 1.0f, 10.0f );
+               Renderer->SearchRadius = std::max( Renderer->SearchRadius - 1.0f, 10.0f );
                std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
             }
             else {
-               Renderer->NeighborNum += std::max( Renderer->NeighborNum - 1, 1 );
-               std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
+               Renderer->NeighborNum = std::max( Renderer->NeighborNum - 1, 1 );
+               std::cout << ">> Search Points with " << Renderer->NeighborNum << "-nn\n";
             }
          }
+         break;
+      case GLFW_KEY_X:
+         Renderer->RenderFounds = false;
+         std::cout << ">> Searched Points Cleared\n";
          break;
       case GLFW_KEY_C:
          Renderer->writeFrame();
@@ -196,6 +202,8 @@ void RendererGL::mouse(GLFWwindow* window, int button, int action, int mods)
          glfwGetCursorPos( window, &x, &y );
          Renderer->ClickedPoint.x = static_cast<int>(std::round( x ));
          Renderer->ClickedPoint.y = static_cast<int>(std::round( y ));
+         Renderer->RenderFounds = true;
+         Renderer->UpdateQuery = true;
       }
       Renderer->MainCamera->setMovingState( moving_state );
    }
@@ -243,6 +251,9 @@ void RendererGL::setObject() const
    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
    Timer->ObjectLoad =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
+
+   std::vector<glm::vec3> vertices(Object->getSize());
+   FoundPoints->setObject( GL_POINTS, vertices );
 }
 
 void RendererGL::setShaders() const
@@ -251,6 +262,10 @@ void RendererGL::setShaders() const
    TextShader->setShader(
       std::string(shader_directory_path + "/text.vert").c_str(),
       std::string(shader_directory_path + "/text.frag").c_str()
+   );
+   PointShader->setShader(
+      std::string(shader_directory_path + "/point_shader.vert").c_str(),
+      std::string(shader_directory_path + "/point_shader.frag").c_str()
    );
    SceneShader->setShader(
       std::string(shader_directory_path + "/scene_shader.vert").c_str(),
@@ -766,6 +781,52 @@ void RendererGL::buildKdtree() const
       << "\n\t* Verify Time = " << Timer->Verify << " sec.\n\n";
 }
 
+bool RendererGL::getQuery(glm::vec3& query)
+{
+   assert( 0 <= ClickedPoint.x && ClickedPoint.x < FrameWidth );
+   assert( 0 <= ClickedPoint.y && ClickedPoint.y < FrameHeight );
+
+   float depth;
+   glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+   glReadPixels( ClickedPoint.x, FrameHeight - ClickedPoint.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth );
+   if (depth == 1.0f) return false;
+
+   const glm::mat4 to_eye = glm::inverse( MainCamera->getProjectionMatrix() * MainCamera->getViewMatrix() );
+   const glm::vec4 ndc_point(
+      2.0f * static_cast<float>(ClickedPoint.x) / static_cast<float>(FrameWidth) - 1.0f,
+      2.0f * static_cast<float>(FrameHeight - ClickedPoint.y) / static_cast<float>(FrameHeight) - 1.0f,
+      2.0f * depth - 1.0f,
+      1.0f
+   );
+   const glm::vec4 p = to_eye * ndc_point;
+   query = p / p.w;
+   return true;
+}
+
+void RendererGL::search()
+{
+   if (UpdateQuery) {
+      UpdateQuery = false;
+
+      glm::vec3 query;
+      if (getQuery( query )) {
+         FoundPoints->replaceVertices( { query }, false, false );
+      }
+      else return;
+   }
+
+   glPointSize( 10.0f );
+   glDisable( GL_DEPTH_TEST );
+   glViewport( 0, 0, FrameWidth, FrameHeight );
+   glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+   glUseProgram( PointShader->getShaderProgram() );
+   PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
+   glBindVertexArray( FoundPoints->getVAO() );
+   glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPoints->getVertexNum() );
+   glEnable( GL_DEPTH_TEST );
+   glPointSize( 1.0f );
+}
+
 void RendererGL::drawObject() const
 {
    glViewport( 0, 0, FrameWidth, FrameHeight );
@@ -828,10 +889,17 @@ void RendererGL::render()
 
    std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
    drawObject();
+   if (RenderFounds) search();
    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
    const auto fps = 1E+6 / static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 
    std::stringstream text;
+   if (SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) {
+      text << "Search Points within Radius " << SearchRadius << "\n";
+   }
+   else if (SearchAlgorithm == SEARCH_ALGORITHM::KNN) {
+      text << "Search Points with " << NeighborNum << "-nn\n";
+   }
    text << std::fixed << std::setprecision( 2 ) << fps << " fps";
    drawText( text.str(), { 80.0f, 100.0f } );
 }

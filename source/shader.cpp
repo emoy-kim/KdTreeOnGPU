@@ -129,7 +129,6 @@ void ShaderGL::setTextUniformLocations()
 void ShaderGL::setPointUniformLocations()
 {
    setBasicTransformationUniforms();
-   addUniformLocation( "Color" );
 }
 
 void ShaderGL::setSceneUniformLocations(int light_num)

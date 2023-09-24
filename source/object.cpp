@@ -419,48 +419,6 @@ void ObjectGL::transferUniformsToShader(const ShaderGL* shader) const
    glUniform1f( shader->getMaterialSpecularExponentLocation(), SpecularReflectionExponent );
 }
 
-void ObjectGL::updateDataBuffer(const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals)
-{
-   assert( VBO != 0 );
-
-   VerticesCount = 0;
-   DataBuffer.clear();
-   for (size_t i = 0; i < vertices.size(); ++i) {
-      DataBuffer.push_back( vertices[i].x );
-      DataBuffer.push_back( vertices[i].y );
-      DataBuffer.push_back( vertices[i].z );
-      DataBuffer.push_back( normals[i].x );
-      DataBuffer.push_back( normals[i].y );
-      DataBuffer.push_back( normals[i].z );
-      VerticesCount++;
-   }
-   glNamedBufferSubData( VBO, 0, static_cast<GLsizeiptr>(sizeof( GLfloat ) * DataBuffer.size()), DataBuffer.data() );
-}
-
-void ObjectGL::updateDataBuffer(
-   const std::vector<glm::vec3>& vertices,
-   const std::vector<glm::vec3>& normals,
-   const std::vector<glm::vec2>& textures
-)
-{
-   assert( VBO != 0 );
-
-   VerticesCount = 0;
-   DataBuffer.clear();
-   for (size_t i = 0; i < vertices.size(); ++i) {
-      DataBuffer.push_back( vertices[i].x );
-      DataBuffer.push_back( vertices[i].y );
-      DataBuffer.push_back( vertices[i].z );
-      DataBuffer.push_back( normals[i].x );
-      DataBuffer.push_back( normals[i].y );
-      DataBuffer.push_back( normals[i].z );
-      DataBuffer.push_back( textures[i].x );
-      DataBuffer.push_back( textures[i].y );
-      VerticesCount++;
-   }
-   glNamedBufferSubData( VBO, 0, static_cast<GLsizeiptr>(sizeof( GLfloat ) * DataBuffer.size()), DataBuffer.data() );
-}
-
 void ObjectGL::replaceVertices(
    const std::vector<glm::vec3>& vertices,
    bool normals_exist,
@@ -479,7 +437,7 @@ void ObjectGL::replaceVertices(
       DataBuffer[i * step + 2] = vertices[i].z;
       VerticesCount++;
    }
-   glNamedBufferSubData( VBO, 0, static_cast<GLsizeiptr>(sizeof( GLfloat ) * VerticesCount * step), DataBuffer.data() );
+   glNamedBufferSubData( VBO, 0, static_cast<int>(sizeof( GLfloat ) * VerticesCount * step), DataBuffer.data() );
 }
 
 void ObjectGL::replaceVertices(
@@ -500,5 +458,5 @@ void ObjectGL::replaceVertices(
       DataBuffer[j * step + 2] = vertices[i + 2];
       VerticesCount++;
    }
-   glNamedBufferSubData( VBO, 0, static_cast<GLsizeiptr>(sizeof( GLfloat ) * VerticesCount * step), DataBuffer.data() );
+   glNamedBufferSubData( VBO, 0, static_cast<int>(sizeof( GLfloat ) * VerticesCount * step), DataBuffer.data() );
 }

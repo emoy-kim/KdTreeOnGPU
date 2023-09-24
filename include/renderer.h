@@ -83,8 +83,11 @@ private:
    inline static RendererGL* Renderer = nullptr;
    GLFWwindow* Window;
    bool Pause;
+   bool UpdateQuery;
+   bool RenderFounds;
    int FrameWidth;
    int FrameHeight;
+   int FoundPointNum;
    int NeighborNum;
    float SearchRadius;
    glm::ivec2 ClickedPoint;
@@ -131,6 +134,8 @@ private:
    void build() const;
    void verify() const;
    void buildKdtree() const;
+   [[nodiscard]] bool getQuery(glm::vec3& query);
+   void search();
    void drawObject() const;
    void drawText(const std::string& text, glm::vec2 start_position) const;
    void render();

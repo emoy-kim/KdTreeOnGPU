@@ -46,12 +46,6 @@ public:
    void addTexture(int width, int height, bool is_grayscale = false);
    int addTexture(const uint8_t* image_buffer, int width, int height, bool is_grayscale = false);
    void transferUniformsToShader(const ShaderGL* shader) const;
-   void updateDataBuffer(const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals);
-   void updateDataBuffer(
-      const std::vector<glm::vec3>& vertices,
-      const std::vector<glm::vec3>& normals,
-      const std::vector<glm::vec2>& textures
-   );
    void replaceVertices(const std::vector<glm::vec3>& vertices, bool normals_exist, bool textures_exist);
    void replaceVertices(const std::vector<float>& vertices, bool normals_exist, bool textures_exist);
    void releaseCustomBuffer(const std::string& name)
@@ -63,6 +57,7 @@ public:
       }
    }
    [[nodiscard]] GLuint getVAO() const { return VAO; }
+   [[nodiscard]] GLuint getVBO() const { return VBO; }
    [[nodiscard]] GLuint getIBO() const { return IBO; }
    [[nodiscard]] GLenum getDrawMode() const { return DrawMode; }
    [[nodiscard]] GLsizei getVertexNum() const { return VerticesCount; }
