@@ -1507,9 +1507,9 @@ namespace cuda
       const auto verify_time =
          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-      std::cout << " >> " << TupleNum - end[0] << " duplicates removed\n";
-      std::cout << " >> Number of nodes = " << NodeNum << "\n" << std::fixed << std::setprecision( 2 )
-         << " >> Total Time = "  << sort_time + build_time + verify_time << " sec."
+      std::cout << ">> " << TupleNum - end[0] << " duplicates removed\n";
+      std::cout << ">> Number of nodes = " << NodeNum << "\n" << std::fixed << std::setprecision( 2 )
+         << ">> Total Time = "  << sort_time + build_time + verify_time << " sec."
          << "\n\t* Sort Time = " << sort_time << " sec."
          << "\n\t* Build Time = " << build_time << " sec."
          << "\n\t* Verify Time = " << verify_time << " sec.\n\n";

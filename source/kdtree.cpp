@@ -28,7 +28,7 @@ void Kdtree<T, dim>::prepareMultiThreading(int thread_num)
    else if (thread_num == 2) MaxSubmitDepth = 0;
    else MaxSubmitDepth = static_cast<int>(std::floor( std::log2( static_cast<double>(thread_num - 1) ) ));
    MaxThreadNum = thread_num;
-   std::cout << " >> Max number of threads = " << MaxThreadNum << "\n >> Max submit depth = " << MaxSubmitDepth << "\n";
+   std::cout << ">> Max number of threads = " << MaxThreadNum << "\n >> Max submit depth = " << MaxSubmitDepth << "\n";
 }
 
 template<typename T, int dim>
@@ -533,9 +533,9 @@ void Kdtree<T, dim>::create(std::vector<const T*>& coordinates)
    const auto verify_time =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count()) * 1e-9;
 
-   std::cout << " >> " << size - end - 1 << " duplicates removed\n";
-   std::cout << " >> Number of nodes = " << NodeNum << "\n" << std::fixed << std::setprecision( 2 )
-      << " >> Total Time = "  << sort_time + remove_time + build_time + verify_time << " sec."
+   std::cout << ">> " << size - end - 1 << " duplicates removed\n";
+   std::cout << ">> Number of nodes = " << NodeNum << "\n" << std::fixed << std::setprecision( 2 )
+      << ">> Total Time = "  << sort_time + remove_time + build_time + verify_time << " sec."
       << "\n\t* Sort Time = " << sort_time << " sec.\n\t* Remove Time = " << remove_time << " sec."
       << "\n\t* Build Time = " << build_time << " sec.\n\t* Verify Time = " << verify_time << " sec.\n\n";
 
