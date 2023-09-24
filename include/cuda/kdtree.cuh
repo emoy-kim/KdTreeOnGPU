@@ -131,7 +131,6 @@ namespace cuda
       void partitionDimension(int axis, int depth);
       void partitionDimensionFinal(int axis, int depth);
       void build();
-      [[nodiscard]] int verify(int start_axis) const;
       [[nodiscard]] int verify();
       void create();
       void print(const std::vector<KdtreeNode>& kd_nodes, int index, int depth) const;

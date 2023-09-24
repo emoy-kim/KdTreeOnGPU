@@ -1418,8 +1418,17 @@ namespace cuda
       if (id == 0) node_sums[blockIdx.x] = sum;
    }
 
-   int KdtreeCUDA::verify(int start_axis) const
+   int KdtreeCUDA::verify()
    {
+      CHECK_CUDA(
+         cudaMalloc( reinterpret_cast<void**>(&Device.MidReferences[0]), sizeof( int ) * 2 * Device.TupleNum )
+      );
+      CHECK_CUDA(
+         cudaMalloc( reinterpret_cast<void**>(&Device.MidReferences[1]), sizeof( int ) * 2 * Device.TupleNum )
+      );
+      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Device.NodeSums), sizeof( int ) * ThreadBlockNum ) );
+      CHECK_CUDA( cudaMemset( Device.NodeSums, 0, sizeof( int ) * ThreadBlockNum ) );
+
       const auto log_size = static_cast<int>(std::floor( std::log2( static_cast<double>(Device.TupleNum) ) ));
       CHECK_CUDA(
          cudaMemcpyAsync(
@@ -1437,7 +1446,7 @@ namespace cuda
       for (int i = 0; i <= log_size; ++i) {
          const int needed_threads = 1 << i;
          const int block_num = std::clamp( needed_threads / ThreadNum, 1, ThreadBlockNum );
-         const int axis = (i + start_axis) % Dim;
+         const int axis = i % Dim;
          child = Device.MidReferences[i & 1];
          next_child = Device.MidReferences[(i + 1) & 1];
          cuVerify<<<block_num, ThreadNum, 0, Device.Stream>>>(
@@ -1462,22 +1471,6 @@ namespace cuda
 
       int node_num = 0;
       CHECK_CUDA( cudaMemcpyAsync( &node_num, Device.NodeSums, sizeof( int ), cudaMemcpyDeviceToHost, Device.Stream ) );
-      std::cout << node_num << std::endl;
-      return node_num;
-   }
-
-   int KdtreeCUDA::verify()
-   {
-      CHECK_CUDA(
-         cudaMalloc( reinterpret_cast<void**>(&Device.MidReferences[0]), sizeof( int ) * 2 * Device.TupleNum )
-      );
-      CHECK_CUDA(
-         cudaMalloc( reinterpret_cast<void**>(&Device.MidReferences[1]), sizeof( int ) * 2 * Device.TupleNum )
-      );
-      CHECK_CUDA( cudaMalloc( reinterpret_cast<void**>(&Device.NodeSums), sizeof( int ) * ThreadBlockNum ) );
-      CHECK_CUDA( cudaMemset( Device.NodeSums, 0, sizeof( int ) * ThreadBlockNum ) );
-
-      const int node_num = verify( 0 );
       CHECK_CUDA( cudaStreamSynchronize( Device.Stream ) );
       CHECK_CUDA( cudaFree( Device.MidReferences[0] ) );
       CHECK_CUDA( cudaFree( Device.MidReferences[1] ) );
