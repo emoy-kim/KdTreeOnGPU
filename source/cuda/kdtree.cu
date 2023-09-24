@@ -1337,11 +1337,11 @@ namespace cuda
       const auto step = static_cast<int>(blockDim.x * gridDim.x);
       const auto id = static_cast<int>(threadIdx.x);
 
-      int node, count = 0;
+      int node, sum = 0;
       for (int i = index; i < size; i += step) {
          node = child[i];
          if (node >= 0) {
-            count++;
+            sum++;
             const int right = root[node].RightChildIndex;
             next_child[i * 2 + 1] = right;
             if (right >= 0) {
@@ -1366,25 +1366,25 @@ namespace cuda
          }
          else next_child[i * 2] = next_child[i * 2 + 1] = -1;
       }
-      sums[id] = count;
+      sums[id] = sum;
       __syncthreads();
 
       for (int i = static_cast<int>(blockDim.x / 2); i > warpSize; i >>= 1) {
          if (id < i) {
-            count += sums[id + i];
-            sums[id] = count;
+            sum += sums[id + i];
+            sums[id] = sum;
          }
          __syncthreads();
       }
 
       if (id < warpSize) {
-         if (blockDim.x >= warpSize * 2) count += sums[id + warpSize];
+         if (blockDim.x >= warpSize * 2) sum += sums[id + warpSize];
          for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-            count += __shfl_down_sync( 0xffffffff, count, offset );
+            sum += __shfl_down_sync( 0xffffffff, sum, offset );
          }
       }
 
-      if (id == 0) node_sums[blockIdx.x] += count;
+      if (id == 0) node_sums[blockIdx.x] += sum;
    }
 
    __global__
@@ -1456,6 +1456,13 @@ namespace cuda
             throw std::runtime_error( buffer.str() );
          }
       }
+
+      REF.resize(ThreadBlockNum);
+      CHECK_CUDA(cudaMemcpyAsync(REF.data(), Device.NodeSums, sizeof( int ) * REF.size(), cudaMemcpyDeviceToHost, Device.Stream));
+      for (const auto& r : REF) {
+         std::cout << r << " ";
+      }
+      std::cout << "\n\n";
 
       cuSumNodeNum<<<1, ThreadNum, 0, Device.Stream>>>( Device.NodeSums );
       CHECK_KERNEL;
