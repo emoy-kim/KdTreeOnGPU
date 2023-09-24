@@ -36,5 +36,5 @@ void main()
       sum = subgroupAdd( sum );
    }
 
-   if (id == 0) node_sums[gl_WorkGroupID.x] += sum;
+   if (id == 0) node_sums[gl_WorkGroupID.x] = sum;
 }

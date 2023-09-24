@@ -54,8 +54,8 @@ void main()
       int warp_num_per_node = total_warp_num >> Depth;
       int m = warp_index / warp_num_per_node;
       mid_references[MidReferenceOffset + m] = mid_reference;
-      if (bool(m & 1)) root[last_mid_references[LastMidReferenceOffset + m >> 1]].RightChildIndex = mid_reference;
-      else root[last_mid_references[LastMidReferenceOffset + m >> 1]].LeftChildIndex = mid_reference;
-      root[mid_reference].ParentIndex = root[last_mid_references[LastMidReferenceOffset + m >> 1]].Index;
+      if (bool(m & 1)) root[last_mid_references[LastMidReferenceOffset + (m >> 1)]].RightChildIndex = mid_reference;
+      else root[last_mid_references[LastMidReferenceOffset + (m >> 1)]].LeftChildIndex = mid_reference;
+      root[mid_reference].ParentIndex = root[last_mid_references[LastMidReferenceOffset + (m >> 1)]].Index;
    }
 }

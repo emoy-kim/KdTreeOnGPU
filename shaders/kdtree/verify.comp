@@ -28,33 +28,33 @@ void main()
    int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
    int id = int(gl_LocalInvocationID.x);
 
-   int node, count = 0;
+   int node, sum = 0;
    for (int i = index; i < Size; i += step) {
       node = child[i];
       if (node >= 0) {
-         count++;
+         sum++;
          next_child[i * 2] = root[node].LeftChildIndex;
          next_child[i * 2 + 1] = root[node].RightChildIndex;
       }
       else next_child[i * 2] = next_child[i * 2 + 1] = -1;
    }
-   sums[id] = count;
+   sums[id] = sum;
    memoryBarrierShared();
    barrier();
 
    for (int i = int(gl_WorkGroupSize.x / 2); i > WarpSize; i >>= 1) {
       if (id < i) {
-         count += sums[id + i];
-         sums[id] = count;
+         sum += sums[id + i];
+         sums[id] = sum;
       }
       memoryBarrierShared();
       barrier();
    }
 
    if (id < WarpSize) {
-      if (int(gl_WorkGroupSize.x) >= WarpSize * 2) count += sums[id + WarpSize];
-      count = subgroupAdd( count );
+      if (int(gl_WorkGroupSize.x) >= WarpSize * 2) sum += sums[id + WarpSize];
+      sum = subgroupAdd( sum );
    }
 
-   if (id == 0) node_sums[gl_WorkGroupID.x] += count;
+   if (id == 0) node_sums[gl_WorkGroupID.x] += sum;
 }

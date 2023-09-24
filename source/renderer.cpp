@@ -641,7 +641,7 @@ void RendererGL::build() const
       glUseProgram( KdtreeBuilder.PartitionFinal->getShaderProgram() );
       KdtreeBuilder.PartitionFinal->uniform1i( "Start", start );
       KdtreeBuilder.PartitionFinal->uniform1i( "End", end );
-      KdtreeBuilder.PartitionFinal->uniform1i( "Depth", depth - loop_levels );
+      KdtreeBuilder.PartitionFinal->uniform1i( "Depth", (depth - 1) - loop_levels );
       KdtreeBuilder.PartitionFinal->uniform1i( "MidReferenceOffset", loop * warp_num );
       KdtreeBuilder.PartitionFinal->uniform1i( "LastMidReferenceOffset", loop * warp_num / 2 );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
@@ -691,8 +691,8 @@ void RendererGL::verify() const
 
 void RendererGL::buildKdtree() const
 {
-   const auto& vert = Object->getVertices();
-   cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
+   //const auto& vert = Object->getVertices();
+   //cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
 
    Object->initialize();
    glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );
