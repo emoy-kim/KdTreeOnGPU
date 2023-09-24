@@ -2,13 +2,13 @@
 
 RendererGL::RendererGL() :
    Window( nullptr ), Pause( false ), UpdateQuery( false ), RenderFounds( false ), ActiveSearching( false ),
-   FrameWidth( 1024 ), FrameHeight( 1024 ), FoundPointNum( 0 ), NeighborNum( 10 ), SearchRadius( 10.0f ),
+   FrameWidth( 1024 ), FrameHeight( 1024 ), FoundPointNum( 0 ), NeighborNum( 5 ), SearchRadius( 10.0f ),
    QueryPoint( -1 ), ClickedPoint( -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
    Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
    MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
    TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
    SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
-   SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
+   SearchAlgorithm( SEARCH_ALGORITHM::KNN )
 
 {
    Renderer = this;
@@ -367,6 +367,16 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/copy_found_points.comp").c_str()
    );
    KdtreeBuilder.CopyFoundPoints->setUniformLocations();
+
+   KdtreeBuilder.FindNearestNeighbors->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/find_nearest_neighbors.comp").c_str()
+   );
+   KdtreeBuilder.FindNearestNeighbors->setUniformLocations();
+
+   KdtreeBuilder.CopyEncodedFoundPoints->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/copy_encoded_found_points.comp").c_str()
+   );
+   KdtreeBuilder.CopyEncodedFoundPoints->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -875,6 +885,63 @@ void RendererGL::search()
    }
 }
 
+void RendererGL::findNearestNeighbors()
+{
+   if (UpdateQuery) {
+      glm::vec3 query;
+      constexpr int query_num = 1; // Currently, the number of queries is 1 since the query is the clicked point.
+      if (getQuery( query )) {
+         Object->prepareKNN( { query }, NeighborNum );
+         const int block_num = divideUp( query_num, KdtreeGL::WarpSize );
+         glUseProgram( KdtreeBuilder.FindNearestNeighbors->getShaderProgram() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( "NodeIndex", Object->getRootNode() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( "QueryNum", query_num );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( "NeighborNum", NeighborNum );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( "Size", Object->getUniqueNum() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( "Dim", Object->getDimension() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRoot() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getCoordinates() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getQueries() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+         FoundPointNum = NeighborNum;
+
+         assert( query_num == 1 && FoundPointNum + 1 <= FoundPoints->getVertexNum() );
+
+         std::cout << ">> " << FoundPointNum << " nearest neighbors of ("
+            << query.x << ", " << query.y << ", " << query.z << ") in all dimensions\n";
+
+         glUseProgram( KdtreeBuilder.CopyEncodedFoundPoints->getShaderProgram() );
+         KdtreeBuilder.CopyEncodedFoundPoints->uniform1i( "NeighborNum", NeighborNum );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, FoundPoints->getVBO() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchLists() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getCoordinates() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getQueries() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+         Object->releaseKNN();
+         UpdateQuery = false;
+         ActiveSearching = true;
+      }
+   }
+
+   if (ActiveSearching) {
+      glPointSize( 10.0f );
+      glDisable( GL_DEPTH_TEST );
+      glViewport( 0, 0, FrameWidth, FrameHeight );
+      glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+      glUseProgram( PointShader->getShaderProgram() );
+      PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
+      glBindVertexArray( FoundPoints->getVAO() );
+      glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPointNum + 1 );
+      glEnable( GL_DEPTH_TEST );
+      glPointSize( 1.0f );
+   }
+}
+
 void RendererGL::drawObject() const
 {
    glViewport( 0, 0, FrameWidth, FrameHeight );
@@ -937,7 +1004,10 @@ void RendererGL::render()
 
    std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
    drawObject();
-   if (RenderFounds) search();
+   if (RenderFounds) {
+      if (SearchAlgorithm == SEARCH_ALGORITHM::RADIUS) search();
+      else if (SearchAlgorithm == SEARCH_ALGORITHM::KNN) findNearestNeighbors();
+   }
    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
    const auto fps = 1E+6 / static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 

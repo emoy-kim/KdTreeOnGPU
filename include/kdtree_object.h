@@ -35,6 +35,8 @@ public:
    void releaseVerifying();
    void prepareSearching(const std::vector<glm::vec3>& queries);
    void releaseSearching();
+   void prepareKNN(const std::vector<glm::vec3>& queries, int neighbor_num);
+   void releaseKNN();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    void setRootNode(int root_node) { RootNode = root_node; }
    void setNodeNum(int node_num) { NodeNum = node_num; }

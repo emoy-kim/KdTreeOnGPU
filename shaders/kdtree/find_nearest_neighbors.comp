@@ -1,0 +1,120 @@
+#version 460
+#extension GL_ARB_gpu_shader_int64 : enable
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+struct KdtreeNode
+{
+   int Index;
+   int ParentIndex;
+   int LeftChildIndex;
+   int RightChildIndex;
+};
+
+layout (binding = 0, std430) buffer Lists { uint64_t lists[]; };
+layout (binding = 1, std430) buffer Root { KdtreeNode root[]; };
+layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
+layout (binding = 3, std430) buffer Queries { float queries[]; };
+
+uniform int NodeIndex;
+uniform int QueryNum;
+uniform int NeighborNum;
+uniform int Size;
+uniform int Dim;
+const float infinity = 1.0f / 0.0f;
+int pushed_num = 0;
+
+float push(in int list_offset, in int node_index, in float squared_distance)
+{
+   uint64_t value = (uint64_t(floatBitsToUint( squared_distance )) << 32) | uint64_t(node_index);
+   if (pushed_num < NeighborNum) {
+      lists[list_offset + pushed_num] = value;
+      pushed_num++;
+      return infinity;
+   }
+
+   for (int i = 0; i < NeighborNum; ++i) {
+      uint64_t max_value = max( lists[list_offset + i], value );
+      uint64_t min_value = min( lists[list_offset + i], value );
+      lists[list_offset + i] = min_value;
+      value = max_value;
+   }
+   return uintBitsToFloat( uint(lists[list_offset + NeighborNum - 1] >> 32) );
+}
+
+void findNearestNeighbors(in int list_offset, in int query_offset)
+{
+   int depth = 0;
+   int prev = -1;
+   int curr = NodeIndex;
+   float max_squared_distance = infinity;
+   while (curr >= 0) {
+      int parent = root[curr].ParentIndex;
+      if (curr >= Size) {
+         prev = curr;
+         curr = parent;
+         continue;
+      }
+
+      bool from_child = prev >= 0 && (prev == root[curr].LeftChildIndex || prev == root[curr].RightChildIndex);
+      if (!from_child) {
+         float squared_distance = 0.0f;
+         for (int d = 0; d < Dim; ++d) {
+            float x = queries[query_offset + d] - coordinates[root[curr].Index * Dim + d];
+            squared_distance += x * x;
+         }
+         if (squared_distance <= max_squared_distance) {
+            max_squared_distance = push( list_offset, curr, squared_distance );
+         }
+      }
+
+      int axis = depth % Dim;
+      float t = queries[query_offset + axis] - coordinates[root[curr].Index * Dim + axis];
+      bool right_priority = t > 0.0f;
+      int far_child = right_priority ? root[curr].LeftChildIndex : root[curr].RightChildIndex;
+      int close_child = right_priority ? root[curr].RightChildIndex : root[curr].LeftChildIndex;
+
+      int next = -1;
+      if (prev >= 0 && prev == close_child) {
+         if (far_child >= 0 && (t == 0.0f || t * t <= max_squared_distance)) {
+            next = far_child;
+            depth++;
+         }
+         else {
+            next = parent;
+            depth--;
+         }
+      }
+       else if (prev >= 0 && prev == far_child) {
+         next = parent;
+         depth--;
+      }
+      else if (prev < 0 || prev == parent) {
+         if (close_child < 0 && far_child < 0) {
+            next = parent;
+            depth--;
+         }
+         else if (close_child < 0) {
+            next = far_child;
+            depth++;
+         }
+         else {
+            next = close_child;
+            depth++;
+         }
+      }
+
+      prev = curr;
+      curr = next;
+   }
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   while (index < QueryNum) {
+      findNearestNeighbors( index * NeighborNum, index * Dim );
+      index += step;
+   }
+}

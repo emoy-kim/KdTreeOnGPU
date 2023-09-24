@@ -265,5 +265,33 @@ public:
    CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&) = delete;
    CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&&) = delete;
 
+   void setUniformLocations() override {}
+};
+
+class FindNearestNeighborsShaderGL final : public ShaderGL
+{
+public:
+   FindNearestNeighborsShaderGL() = default;
+   ~FindNearestNeighborsShaderGL() override = default;
+
+   FindNearestNeighborsShaderGL(const FindNearestNeighborsShaderGL&) = delete;
+   FindNearestNeighborsShaderGL(const FindNearestNeighborsShaderGL&&) = delete;
+   FindNearestNeighborsShaderGL& operator=(const FindNearestNeighborsShaderGL&) = delete;
+   FindNearestNeighborsShaderGL& operator=(const FindNearestNeighborsShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
+
+class CopyEncodedFoundPointsShaderGL final : public ShaderGL
+{
+public:
+   CopyEncodedFoundPointsShaderGL() = default;
+   ~CopyEncodedFoundPointsShaderGL() override = default;
+
+   CopyEncodedFoundPointsShaderGL(const CopyEncodedFoundPointsShaderGL&) = delete;
+   CopyEncodedFoundPointsShaderGL(const CopyEncodedFoundPointsShaderGL&&) = delete;
+   CopyEncodedFoundPointsShaderGL& operator=(const CopyEncodedFoundPointsShaderGL&) = delete;
+   CopyEncodedFoundPointsShaderGL& operator=(const CopyEncodedFoundPointsShaderGL&&) = delete;
+
    void setUniformLocations() override;
 };

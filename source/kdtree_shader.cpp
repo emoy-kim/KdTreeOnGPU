@@ -125,9 +125,16 @@ void SearchShaderGL::setUniformLocations()
    addUniformLocation( "Dim" );
 }
 
-void CopyFoundPointsShaderGL::setUniformLocations()
+void FindNearestNeighborsShaderGL::setUniformLocations()
 {
+   addUniformLocation( "NodeIndex" );
    addUniformLocation( "QueryNum" );
+   addUniformLocation( "NeighborNum" );
    addUniformLocation( "Size" );
    addUniformLocation( "Dim" );
+}
+
+void CopyEncodedFoundPointsShaderGL::setUniformLocations()
+{
+   addUniformLocation( "NeighborNum" );
 }

@@ -59,6 +59,8 @@ private:
       std::unique_ptr<SumNodeNumShaderGL> SumNodeNum;
       std::unique_ptr<SearchShaderGL> Search;
       std::unique_ptr<CopyFoundPointsShaderGL> CopyFoundPoints;
+      std::unique_ptr<FindNearestNeighborsShaderGL> FindNearestNeighbors;
+      std::unique_ptr<CopyEncodedFoundPointsShaderGL> CopyEncodedFoundPoints;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -79,7 +81,9 @@ private:
          Verify( std::make_unique<VerifyShaderGL>() ),
          SumNodeNum( std::make_unique<SumNodeNumShaderGL>() ),
          Search( std::make_unique<SearchShaderGL>() ),
-         CopyFoundPoints( std::make_unique<CopyFoundPointsShaderGL>() )
+         CopyFoundPoints( std::make_unique<CopyFoundPointsShaderGL>() ),
+         FindNearestNeighbors( std::make_unique<FindNearestNeighborsShaderGL>() ),
+         CopyEncodedFoundPoints( std::make_unique<CopyEncodedFoundPointsShaderGL>() )
          {}
    };
 
@@ -109,16 +113,7 @@ private:
    KdtreeBuild KdtreeBuilder;
    SEARCH_ALGORITHM SearchAlgorithm;
 
-   // 16 and 32 do well, anything in between or below is bad.
-   // 32 seems to do well on laptop/desktop Windows Intel and on NVidia/AMD as well.
-   // further hardware-specific tuning might be needed for optimal performance.
-   static constexpr int ThreadGroupSize = 32;
-   [[nodiscard]] static int getGroupSize(int size)
-   {
-      return (size + ThreadGroupSize - 1) / ThreadGroupSize;
-   }
-
-   static constexpr int divideUp(int a, int b) { return (a + b - 1) / b; }
+   [[nodiscard]] static constexpr int divideUp(int a, int b) { return (a + b - 1) / b; }
 
    void registerCallbacks() const;
    void initialize();
@@ -141,6 +136,7 @@ private:
    void buildKdtree() const;
    [[nodiscard]] bool getQuery(glm::vec3& query);
    void search();
+   void findNearestNeighbors();
    void drawObject() const;
    void drawText(const std::string& text, glm::vec2 start_position) const;
    void render();
