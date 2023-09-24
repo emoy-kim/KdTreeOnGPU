@@ -1457,13 +1457,6 @@ namespace cuda
          }
       }
 
-      REF.resize(ThreadBlockNum);
-      CHECK_CUDA(cudaMemcpyAsync(REF.data(), Device.NodeSums, sizeof( int ) * REF.size(), cudaMemcpyDeviceToHost, Device.Stream));
-      for (const auto& r : REF) {
-         std::cout << r << " ";
-      }
-      std::cout << "\n\n";
-
       cuSumNodeNum<<<1, ThreadNum, 0, Device.Stream>>>( Device.NodeSums );
       CHECK_KERNEL;
 
