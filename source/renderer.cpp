@@ -1,13 +1,14 @@
 #include "renderer.h"
 
 RendererGL::RendererGL() :
-   Window( nullptr ), Pause( false ), UpdateQuery( false ), RenderFounds( false ), FrameWidth( 1024 ),
-   FrameHeight( 1024 ), FoundPointNum( 1 ), NeighborNum( 10 ), SearchRadius( 10.0f ), ClickedPoint( -1, -1 ),
-   Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ), Object( std::make_unique<KdtreeGL>() ),
-   FoundPoints( std::make_unique<ObjectGL>() ), MainCamera( std::make_unique<CameraGL>() ),
-   TextCamera( std::make_unique<CameraGL>() ), TextShader( std::make_unique<ShaderGL>() ),
-   PointShader( std::make_unique<ShaderGL>() ), SceneShader( std::make_unique<ShaderGL>() ),
-   Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(), SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
+   Window( nullptr ), Pause( false ), UpdateQuery( false ), RenderFounds( false ), ActiveSearching( false ),
+   FrameWidth( 1024 ), FrameHeight( 1024 ), FoundPointNum( 0 ), NeighborNum( 10 ), SearchRadius( 10.0f ),
+   ClickedPoint( -1, -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
+   Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
+   MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
+   TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
+   SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
+   SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
 
 {
    Renderer = this;
@@ -106,6 +107,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
    switch (key) {
       case GLFW_KEY_1:
          if (!Renderer->Pause) {
+            Renderer->FoundPointNum = 0;
             Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::RADIUS;
             std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
@@ -113,6 +115,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
          break;
       case GLFW_KEY_2:
          if (!Renderer->Pause) {
+            Renderer->FoundPointNum = 0;
             Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::KNN;
             std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
@@ -143,6 +146,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
          }
          break;
       case GLFW_KEY_X:
+         Renderer->FoundPointNum = 0;
          Renderer->RenderFounds = false;
          std::cout << ">> Searched Points Cleared\n";
          break;
@@ -353,6 +357,14 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/sum_node_num.comp").c_str()
    );
    KdtreeBuilder.SumNodeNum->setUniformLocations();
+
+   KdtreeBuilder.Search->setComputeShader( std::string(shader_directory_path + "/kdtree/search.comp").c_str() );
+   KdtreeBuilder.Search->setUniformLocations();
+
+   KdtreeBuilder.CopyFoundPoints->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/copy_found_points.comp").c_str()
+   );
+   KdtreeBuilder.CopyFoundPoints->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -744,9 +756,6 @@ void RendererGL::verify() const
 
 void RendererGL::buildKdtree() const
 {
-   //const auto& vert = Object->getVertices();
-   //cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
-
    Object->initialize();
    glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );
    KdtreeBuilder.Initialize->uniform1i( "Size", Object->getSize() );
@@ -772,9 +781,9 @@ void RendererGL::buildKdtree() const
    Timer->Verify =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
 
-   std::cout << " >> " << Object->getSize() - Object->getUniqueNum() << " duplicates removed\n";
-   std::cout << " >> Number of nodes = " << Object->getNodeNum() << "\n" << std::fixed << std::setprecision( 2 )
-      << " >> Total Time = "  << Timer->ObjectLoad + Timer->Sort + Timer->Build + Timer->Verify << " sec."
+   std::cout << ">> " << Object->getSize() - Object->getUniqueNum() << " duplicates removed\n";
+   std::cout << ">> Number of nodes = " << Object->getNodeNum() << "\n" << std::fixed << std::setprecision( 2 )
+      << ">> Total Time = "  << Timer->ObjectLoad + Timer->Sort + Timer->Build + Timer->Verify << " sec."
       << "\n\t* Object Load Time = " << Timer->ObjectLoad << " sec."
       << "\n\t* Sort Time = " << Timer->Sort << " sec."
       << "\n\t* Build Time = " << Timer->Build << " sec."
@@ -806,25 +815,62 @@ bool RendererGL::getQuery(glm::vec3& query)
 void RendererGL::search()
 {
    if (UpdateQuery) {
-      UpdateQuery = false;
-
       glm::vec3 query;
+      constexpr int query_num = 1; // Currently, the number of queries is 1 since the query is the clicked point.
       if (getQuery( query )) {
-         FoundPoints->replaceVertices( { query }, false, false );
+         Object->prepareSearching( { query } );
+         const int block_num = divideUp( query_num, KdtreeGL::WarpSize );
+         glUseProgram( KdtreeBuilder.Search->getShaderProgram() );
+         KdtreeBuilder.Search->uniform1f( "SearchRadius", SearchRadius );
+         KdtreeBuilder.Search->uniform1i( "NodeIndex", Object->getRootNode() );
+         KdtreeBuilder.Search->uniform1i( "QueryNum", query_num );
+         KdtreeBuilder.Search->uniform1i( "Size", Object->getUniqueNum() );
+         KdtreeBuilder.Search->uniform1i( "Dim", Object->getDimension() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchListLengths() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getRoot() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getCoordinates() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getQueries() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+         glGetNamedBufferSubData( Object->getSearchListLengths(), 0, sizeof( int ), &FoundPointNum );
+         FoundPointNum = std::max( FoundPointNum, 0 );
+
+         assert( query_num == 1 && FoundPointNum + 1 <= FoundPoints->getVertexNum() );
+
+         if (FoundPointNum > 0) {
+            std::cout << ">> " << FoundPointNum << " nodes within " << SearchRadius << " units of ("
+               << query.x << ", " << query.y << ", " << query.z << ") in all dimensions\n";
+         }
+
+         glUseProgram( KdtreeBuilder.CopyFoundPoints->getShaderProgram() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, FoundPoints->getVBO() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchLists() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getSearchListLengths() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, Object->getCoordinates() );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 4, Object->getQueries() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+         Object->releaseSearching();
+         UpdateQuery = false;
+         ActiveSearching = true;
       }
-      else return;
    }
 
-   glPointSize( 10.0f );
-   glDisable( GL_DEPTH_TEST );
-   glViewport( 0, 0, FrameWidth, FrameHeight );
-   glBindFramebuffer( GL_FRAMEBUFFER, 0 );
-   glUseProgram( PointShader->getShaderProgram() );
-   PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
-   glBindVertexArray( FoundPoints->getVAO() );
-   glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPoints->getVertexNum() );
-   glEnable( GL_DEPTH_TEST );
-   glPointSize( 1.0f );
+   if (ActiveSearching) {
+      glPointSize( 10.0f );
+      glDisable( GL_DEPTH_TEST );
+      glViewport( 0, 0, FrameWidth, FrameHeight );
+      glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+      glUseProgram( PointShader->getShaderProgram() );
+      PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
+      glBindVertexArray( FoundPoints->getVAO() );
+      glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPointNum + 1 );
+      glEnable( GL_DEPTH_TEST );
+      glPointSize( 1.0f );
+   }
 }
 
 void RendererGL::drawObject() const

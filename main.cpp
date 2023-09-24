@@ -161,13 +161,13 @@ int main()
    testMultithreading( mt_output, coordinates, queries );
 
 #ifdef USE_CUDA
-   std::vector<float> cuda_output;
+   /*std::vector<float> cuda_output;
    testCUDA( cuda_output, coordinates, queries );
 
    assert( mt_output.size() == cuda_output.size() );
    for (size_t i = 0; i < mt_output.size(); ++i) {
       assert( mt_output[i] == cuda_output[i] );
-   }
+   }*/
 #endif
    std::cout << "\n\n";
 

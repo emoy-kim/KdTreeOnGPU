@@ -115,3 +115,19 @@ void VerifyShaderGL::setUniformLocations()
 {
    addUniformLocation( "Size" );
 }
+
+void SearchShaderGL::setUniformLocations()
+{
+   addUniformLocation( "SearchRadius" );
+   addUniformLocation( "NodeIndex" );
+   addUniformLocation( "QueryNum" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Dim" );
+}
+
+void CopyFoundPointsShaderGL::setUniformLocations()
+{
+   addUniformLocation( "QueryNum" );
+   addUniformLocation( "Size" );
+   addUniformLocation( "Dim" );
+}

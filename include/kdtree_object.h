@@ -33,6 +33,8 @@ public:
    void releaseBuilding();
    void prepareVerifying();
    void releaseVerifying();
+   void prepareSearching(const std::vector<glm::vec3>& queries);
+   void releaseSearching();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    void setRootNode(int root_node) { RootNode = root_node; }
    void setNodeNum(int node_num) { NodeNum = node_num; }
@@ -56,6 +58,9 @@ public:
    [[nodiscard]] GLuint getRightChildNumInWarp() const { return RightChildNumInWarp; }
    [[nodiscard]] GLuint getNodeSums() const { return NodeSums; }
    [[nodiscard]] GLuint getMidReferences(int index) const { return MidReferences[index]; }
+   [[nodiscard]] GLuint getSearchLists() const { return Search.Lists; }
+   [[nodiscard]] GLuint getSearchListLengths() const { return Search.ListLengths; }
+   [[nodiscard]] GLuint getQueries() const { return Search.Queries; }
    [[nodiscard]] const std::vector<glm::vec3>& getVertices() const { return Vertices; }
 
 private:
@@ -74,11 +79,21 @@ private:
          Buffer( 0 ) {}
    };
 
+   struct SearchGL
+   {
+      GLuint Lists;
+      GLuint ListLengths;
+      GLuint Queries;
+
+      SearchGL() : Lists( 0 ), ListLengths( 0 ), Queries( 0 ) {}
+   };
+
    const int Dim;
    int UniqueNum;
    int RootNode;
    int NodeNum;
    SortGL Sort;
+   SearchGL Search;
    GLuint Root;
    GLuint Coordinates;
    GLuint LeftChildNumInWarp;

@@ -146,3 +146,29 @@ void KdtreeGL::releaseVerifying()
    MidReferences[1] = 0;
    NodeSums = 0;
 }
+
+void KdtreeGL::prepareSearching(const std::vector<glm::vec3>& queries)
+{
+   const auto query_num = static_cast<int>(queries.size());
+   Search.Lists = addCustomBufferObject<int>( "Lists", UniqueNum * query_num );
+   Search.ListLengths = addCustomBufferObject<int>( "ListLengths", query_num );
+   Search.Queries = addCustomBufferObject<float>( "Queries", query_num * Dim );
+
+   constexpr int zero = 0;
+   glClearNamedBufferData( Search.ListLengths, GL_R32I, GL_RED_INTEGER, GL_INT, &zero );
+   glNamedBufferSubData(
+      Search.Queries, 0,
+      static_cast<int>(query_num * Dim * sizeof( float )),
+      glm::value_ptr( queries[0] )
+   );
+}
+
+void KdtreeGL::releaseSearching()
+{
+   releaseCustomBuffer( "Lists" );
+   releaseCustomBuffer( "ListLengths" );
+   releaseCustomBuffer( "Queries" );
+   Search.Lists = 0;
+   Search.ListLengths = 0;
+   Search.Queries = 0;
+}

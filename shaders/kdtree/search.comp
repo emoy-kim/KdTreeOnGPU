@@ -1,0 +1,117 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+struct KdtreeNode
+{
+   int Index;
+   int ParentIndex;
+   int LeftChildIndex;
+   int RightChildIndex;
+};
+
+layout (binding = 0, std430) buffer Lists { int lists[]; };
+layout (binding = 1, std430) buffer ListLengths { int list_lengths[]; };
+layout (binding = 2, std430) buffer Root { KdtreeNode root[]; };
+layout (binding = 3, std430) buffer Coordinates { float coordinates[]; };
+layout (binding = 4, std430) buffer Queries { float queries[]; };
+
+uniform float SearchRadius;
+uniform int NodeIndex;
+uniform int QueryNum;
+uniform int Size;
+uniform int Dim;
+
+float compareSuperKey(in int offset_a, in int offset_b, in int axis, in float delta)
+{
+   float difference = coordinates[offset_a + axis] - (queries[offset_b + axis] + delta);
+   for (int i = 1; difference == 0.0f && i < Dim; ++i) {
+      int r = i + axis;
+      r = r < Dim ? r : r - Dim;
+      difference = coordinates[offset_a + r] - (queries[offset_b + r] + delta);
+   }
+   return difference;
+}
+
+void findQueryWithoutStack()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int depth = 0;
+   int prev = -1;
+   int curr = NodeIndex;
+   while (curr >= 0) {
+      int parent = root[curr].ParentIndex;
+      if (curr >= Size) {
+         prev = curr;
+         curr = parent;
+         continue;
+      }
+
+      int query_offset = index * Dim;
+      int point_offset = root[curr].Index * Dim;
+      bool from_child = prev >= 0 && (prev == root[curr].LeftChildIndex || prev == root[curr].RightChildIndex);
+      if (!from_child) {
+         bool inside = true;
+         for (int d = 0; d < Dim; ++d) {
+            if (queries[query_offset + d] - SearchRadius > coordinates[point_offset + d] ||
+                queries[query_offset + d] + SearchRadius < coordinates[point_offset + d]) {
+               inside = false;
+               break;
+            }
+         }
+         if (inside) {
+            lists[index * Size + list_lengths[index]] = root[curr].Index;
+            list_lengths[index]++;
+         }
+      }
+
+      int axis = depth % Dim;
+      bool search_left = root[curr].LeftChildIndex >= 0 &&
+         compareSuperKey( point_offset, query_offset, axis, -SearchRadius ) >= 0.0f;
+      bool search_right = root[curr].RightChildIndex >= 0 &&
+         compareSuperKey( point_offset, query_offset, axis, SearchRadius ) <= 0.0f;
+
+      int next = -1;
+      if (search_left && prev == root[curr].LeftChildIndex) {
+         if (search_right) {
+            next = root[curr].RightChildIndex;
+            depth++;
+         }
+         else {
+            next = parent;
+            depth--;
+         }
+      }
+      else if (search_right && prev == root[curr].RightChildIndex) {
+         next = parent;
+         depth--;
+      }
+      else if (prev < 0 || prev == parent) {
+         if (!search_left && !search_right) {
+            next = parent;
+            depth--;
+         }
+         else if (!search_left) {
+            next = root[curr].RightChildIndex;
+            depth++;
+         }
+         else {
+            next = root[curr].LeftChildIndex;
+            depth++;
+         }
+      }
+
+      prev = curr;
+      curr = next;
+   }
+}
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   while (index < QueryNum) {
+      findQueryWithoutStack();
+      index += step;
+   }
+}

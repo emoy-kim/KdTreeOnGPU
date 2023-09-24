@@ -58,6 +58,8 @@ private:
       std::unique_ptr<PartitionFinalShaderGL> PartitionFinal;
       std::unique_ptr<VerifyShaderGL> Verify;
       std::unique_ptr<SumNodeNumShaderGL> SumNodeNum;
+      std::unique_ptr<SearchShaderGL> Search;
+      std::unique_ptr<CopyFoundPointsShaderGL> CopyFoundPoints;
 
       KdtreeBuild() :
          Initialize( std::make_unique<InitializeShaderGL>() ),
@@ -76,7 +78,9 @@ private:
          CopyReference( std::make_unique<CopyReferenceShaderGL>() ),
          PartitionFinal( std::make_unique<PartitionFinalShaderGL>() ),
          Verify( std::make_unique<VerifyShaderGL>() ),
-         SumNodeNum( std::make_unique<SumNodeNumShaderGL>() )
+         SumNodeNum( std::make_unique<SumNodeNumShaderGL>() ),
+         Search( std::make_unique<SearchShaderGL>() ),
+         CopyFoundPoints( std::make_unique<CopyFoundPointsShaderGL>() )
          {}
    };
 
@@ -85,6 +89,7 @@ private:
    bool Pause;
    bool UpdateQuery;
    bool RenderFounds;
+   bool ActiveSearching;
    int FrameWidth;
    int FrameHeight;
    int FoundPointNum;

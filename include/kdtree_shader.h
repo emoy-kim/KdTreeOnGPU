@@ -239,3 +239,31 @@ public:
 
    void setUniformLocations() override {}
 };
+
+class SearchShaderGL final : public ShaderGL
+{
+public:
+   SearchShaderGL() = default;
+   ~SearchShaderGL() override = default;
+
+   SearchShaderGL(const SearchShaderGL&) = delete;
+   SearchShaderGL(const SearchShaderGL&&) = delete;
+   SearchShaderGL& operator=(const SearchShaderGL&) = delete;
+   SearchShaderGL& operator=(const SearchShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
+
+class CopyFoundPointsShaderGL final : public ShaderGL
+{
+public:
+   CopyFoundPointsShaderGL() = default;
+   ~CopyFoundPointsShaderGL() override = default;
+
+   CopyFoundPointsShaderGL(const CopyFoundPointsShaderGL&) = delete;
+   CopyFoundPointsShaderGL(const CopyFoundPointsShaderGL&&) = delete;
+   CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&) = delete;
+   CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
