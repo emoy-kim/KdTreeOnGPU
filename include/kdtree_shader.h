@@ -211,3 +211,31 @@ public:
 
    void setUniformLocations() override;
 };
+
+class VerifyShaderGL final : public ShaderGL
+{
+public:
+   VerifyShaderGL() = default;
+   ~VerifyShaderGL() override = default;
+
+   VerifyShaderGL(const VerifyShaderGL&) = delete;
+   VerifyShaderGL(const VerifyShaderGL&&) = delete;
+   VerifyShaderGL& operator=(const VerifyShaderGL&) = delete;
+   VerifyShaderGL& operator=(const VerifyShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
+
+class SumNodeNumShaderGL final : public ShaderGL
+{
+public:
+   SumNodeNumShaderGL() = default;
+   ~SumNodeNumShaderGL() override = default;
+
+   SumNodeNumShaderGL(const SumNodeNumShaderGL&) = delete;
+   SumNodeNumShaderGL(const SumNodeNumShaderGL&&) = delete;
+   SumNodeNumShaderGL& operator=(const SumNodeNumShaderGL&) = delete;
+   SumNodeNumShaderGL& operator=(const SumNodeNumShaderGL&&) = delete;
+
+   void setUniformLocations() override {}
+};

@@ -35,6 +35,7 @@ public:
    void releaseVerifying();
    void setUniqueNum(int unique_num) { UniqueNum = unique_num; }
    void setRootNode(int root_node) { RootNode = root_node; }
+   void setNodeNum(int node_num) { NodeNum = node_num; }
    [[nodiscard]] int getDimension() const { return Dim; }
    [[nodiscard]] int getUniqueNum() const { return UniqueNum; }
    [[nodiscard]] int getRootNode() const { return RootNode; }

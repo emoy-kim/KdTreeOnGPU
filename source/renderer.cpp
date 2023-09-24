@@ -291,6 +291,14 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/partition_final.comp").c_str()
    );
    KdtreeBuilder.PartitionFinal->setUniformLocations();
+
+   KdtreeBuilder.Verify->setComputeShader( std::string(shader_directory_path + "/kdtree/verify.comp").c_str() );
+   KdtreeBuilder.Verify->setUniformLocations();
+
+   KdtreeBuilder.SumNodeNum->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/sum_node_num.comp").c_str()
+   );
+   KdtreeBuilder.SumNodeNum->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -649,16 +657,42 @@ void RendererGL::build() const
 void RendererGL::verify() const
 {
    Object->prepareVerifying();
-   const int size = Object->getUniqueNum();
-   const auto log_size = static_cast<int>(std::floor( std::log2( static_cast<double>(size) ) ));
+   GLuint child, next_child;
+   const GLuint root = Object->getRoot();
+   const GLuint node_sums = Object->getNodeSums();
+   const auto log_size = static_cast<int>(std::floor( std::log2( static_cast<double>(Object->getUniqueNum()) ) ));
+   glUseProgram( KdtreeBuilder.Verify->getShaderProgram() );
+   for (int i = 0; i <= log_size; ++i) {
+      const int needed_threads = 1 << i;
+      const int block_num = std::clamp( needed_threads / KdtreeGL::ThreadNum, 1, KdtreeGL::ThreadBlockNum );
+      child = Object->getMidReferences( i & 1 );
+      next_child = Object->getMidReferences( (i + 1) & 1 );
+      KdtreeBuilder.Verify->uniform1i( "Size", needed_threads );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, node_sums );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, next_child );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, child );
+      glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 3, root );
+      glDispatchCompute( block_num, 1, 1 );
+      glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+   }
+
+   glUseProgram( KdtreeBuilder.SumNodeNum->getShaderProgram() );
+   glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, node_sums );
+   glDispatchCompute( 1, 1, 1 );
+   glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
+   int node_num = 0;
+   glGetNamedBufferSubData( node_sums, 0, sizeof( int ), &node_num );
+   Object->setNodeNum( node_num );
+   std::cout << node_num << std::endl;
 
    Object->releaseVerifying();
 }
 
 void RendererGL::buildKdtree() const
 {
-   //const auto& vert = Object->getVertices();
-   //cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
+   const auto& vert = Object->getVertices();
+   cuda::KdtreeCUDA kdtree(glm::value_ptr( vert[0] ), static_cast<int>(vert.size()), 3);
 
    Object->initialize();
    glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );

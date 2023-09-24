@@ -133,8 +133,8 @@ void KdtreeGL::prepareVerifying()
    assert( RootNode >= 0 );
 
    constexpr int zero = 0;
-   glClearNamedBufferData( NodeSums, GL_R32I, GL_RED, GL_INT, &zero );
-   glClearNamedBufferSubData( MidReferences[0], GL_R32I, 0, sizeof( int ), GL_RED, GL_INT, &RootNode );
+   glClearNamedBufferData( NodeSums, GL_R32I, GL_RED_INTEGER, GL_INT, &zero );
+   glClearNamedBufferSubData( MidReferences[0], GL_R32I, 0, sizeof( int ), GL_RED_INTEGER, GL_INT, &RootNode );
 }
 
 void KdtreeGL::releaseVerifying()

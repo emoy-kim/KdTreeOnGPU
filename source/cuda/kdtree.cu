@@ -1462,6 +1462,7 @@ namespace cuda
 
       int node_num = 0;
       CHECK_CUDA( cudaMemcpyAsync( &node_num, Device.NodeSums, sizeof( int ), cudaMemcpyDeviceToHost, Device.Stream ) );
+      std::cout << node_num << std::endl;
       return node_num;
    }
 

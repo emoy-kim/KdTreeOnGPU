@@ -1,0 +1,40 @@
+#version 460
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+
+layout (local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer NodeSums { int node_sums[]; };
+
+const int WarpSize = 32;
+const int ThreadBlockNum = WarpSize;
+const int SharedSize = WarpSize * WarpSize;
+
+shared int sums[SharedSize];
+
+void main()
+{
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   int id = int(gl_LocalInvocationID.x);
+
+   int sum = 0;
+   for (int i = id; i < ThreadBlockNum; i += step) sum += node_sums[i];
+   sums[id] = sum;
+   memoryBarrierShared();
+   barrier();
+
+   for (int i = int(gl_WorkGroupSize.x / 2); i > WarpSize; i >>= 1) {
+      if (id < i) {
+         sum += sums[id + i];
+         sums[id] = sum;
+      }
+      memoryBarrierShared();
+      barrier();
+   }
+
+   if (id < WarpSize) {
+      if (int(gl_WorkGroupSize.x) >= WarpSize * 2) sum += sums[id + WarpSize];
+      sum = subgroupAdd( sum );
+   }
+
+   if (id == 0) node_sums[gl_WorkGroupID.x] += sum;
+}

@@ -110,3 +110,8 @@ void PartitionFinalShaderGL::setUniformLocations()
    addUniformLocation( "MidReferenceOffset" );
    addUniformLocation( "LastMidReferenceOffset" );
 }
+
+void VerifyShaderGL::setUniformLocations()
+{
+   addUniformLocation( "Size" );
+}
