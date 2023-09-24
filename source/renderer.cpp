@@ -684,7 +684,6 @@ void RendererGL::verify() const
    int node_num = 0;
    glGetNamedBufferSubData( node_sums, 0, sizeof( int ), &node_num );
    Object->setNodeNum( node_num );
-   std::cout << node_num << std::endl;
 
    Object->releaseVerifying();
 }
@@ -718,6 +717,14 @@ void RendererGL::buildKdtree() const
    end = std::chrono::steady_clock::now();
    Timer->Verify =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
+
+   std::cout << " >> " << Object->getSize() - Object->getUniqueNum() << " duplicates removed\n";
+   std::cout << " >> Number of nodes = " << Object->getNodeNum() << "\n" << std::fixed << std::setprecision( 2 )
+      << " >> Total Time = "  << Timer->ObjectLoad + Timer->Sort + Timer->Build + Timer->Verify << " sec."
+      << "\n\t* Object Load Time = " << Timer->ObjectLoad << " sec."
+      << "\n\t* Sort Time = " << Timer->Sort << " sec."
+      << "\n\t* Build Time = " << Timer->Build << " sec."
+      << "\n\t* Verify Time = " << Timer->Verify << " sec.\n\n";
 }
 
 void RendererGL::drawObject() const
