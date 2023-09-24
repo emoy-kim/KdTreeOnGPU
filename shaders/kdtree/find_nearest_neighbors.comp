@@ -1,5 +1,4 @@
 #version 460
-#extension GL_ARB_gpu_shader_int64 : enable
 
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
@@ -11,7 +10,7 @@ struct KdtreeNode
    int RightChildIndex;
 };
 
-layout (binding = 0, std430) buffer Lists { uint64_t lists[]; };
+layout (binding = 0, std430) buffer Lists { uint lists[]; };
 layout (binding = 1, std430) buffer Root { KdtreeNode root[]; };
 layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 3, std430) buffer Queries { float queries[]; };
@@ -22,24 +21,28 @@ uniform int NeighborNum;
 uniform int Size;
 uniform int Dim;
 const float infinity = 1.0f / 0.0f;
-int pushed_num = 0;
 
 float push(in int list_offset, in int node_index, in float squared_distance)
 {
-   uint64_t value = (uint64_t(floatBitsToUint( squared_distance )) << 32) | uint64_t(node_index);
-   if (pushed_num < NeighborNum) {
-      lists[list_offset + pushed_num] = value;
-      pushed_num++;
-      return infinity;
-   }
-
+   uint encoded_distance = floatBitsToUint( squared_distance );
+   uint encoded_index = uint(node_index);
    for (int i = 0; i < NeighborNum; ++i) {
-      uint64_t max_value = max( lists[list_offset + i], value );
-      uint64_t min_value = min( lists[list_offset + i], value );
-      lists[list_offset + i] = min_value;
-      value = max_value;
+      uint max_distance = lists[list_offset + i * 2];
+      uint min_distance = encoded_distance;
+      uint max_index = lists[list_offset + i * 2 + 1];
+      uint min_index = encoded_index;
+      if (max_distance < min_distance) {
+         max_distance = encoded_distance;
+         min_distance = lists[list_offset + i * 2];
+         max_index = encoded_index;
+         min_index = lists[list_offset + i * 2 + 1];
+      }
+      lists[list_offset + i * 2] = min_distance;
+      lists[list_offset + i * 2 + 1] = min_index;
+      encoded_distance = max_distance;
+      encoded_index = max_index;
    }
-   return uintBitsToFloat( uint(lists[list_offset + NeighborNum - 1] >> 32) );
+   return uintBitsToFloat( uint(lists[list_offset + (NeighborNum - 1) * 2] >> 32) );
 }
 
 void findNearestNeighbors(in int list_offset, in int query_offset)
@@ -114,7 +117,7 @@ void main()
    int index = int(gl_GlobalInvocationID.x);
    int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
    while (index < QueryNum) {
-      findNearestNeighbors( index * NeighborNum, index * Dim );
+      findNearestNeighbors( index * NeighborNum * 2, index * Dim );
       index += step;
    }
 }

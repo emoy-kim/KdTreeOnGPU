@@ -59,6 +59,7 @@ private:
       std::unique_ptr<SumNodeNumShaderGL> SumNodeNum;
       std::unique_ptr<SearchShaderGL> Search;
       std::unique_ptr<CopyFoundPointsShaderGL> CopyFoundPoints;
+      std::unique_ptr<InitializeKNNShaderGL> InitializeKNN;
       std::unique_ptr<FindNearestNeighborsShaderGL> FindNearestNeighbors;
       std::unique_ptr<CopyEncodedFoundPointsShaderGL> CopyEncodedFoundPoints;
 
@@ -82,6 +83,7 @@ private:
          SumNodeNum( std::make_unique<SumNodeNumShaderGL>() ),
          Search( std::make_unique<SearchShaderGL>() ),
          CopyFoundPoints( std::make_unique<CopyFoundPointsShaderGL>() ),
+         InitializeKNN( std::make_unique<InitializeKNNShaderGL>() ),
          FindNearestNeighbors( std::make_unique<FindNearestNeighborsShaderGL>() ),
          CopyEncodedFoundPoints( std::make_unique<CopyEncodedFoundPointsShaderGL>() )
          {}

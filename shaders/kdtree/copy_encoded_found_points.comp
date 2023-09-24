@@ -1,10 +1,9 @@
 #version 460
-#extension GL_ARB_gpu_shader_int64 : enable
 
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout (binding = 0, std430) buffer VBO { float vbo[]; };
-layout (binding = 1, std430) buffer Lists { uint64_t lists[]; };
+layout (binding = 1, std430) buffer Lists { uint lists[]; };
 layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 3, std430) buffer Queries { float queries[]; };
 
@@ -21,7 +20,7 @@ void main()
    vbo[1] = queries[1];
    vbo[2] = queries[2];
    for (int i = 0; i < NeighborNum; ++i) {
-      int node_index = int(lists[i] & 0xffffffff);
+      int node_index = int(lists[i * 2 + 1]);
       if (index < 0) {
          vbo[(i + 1) * Dim] = vbo[0];
          vbo[(i + 1) * Dim + 1] = vbo[1];

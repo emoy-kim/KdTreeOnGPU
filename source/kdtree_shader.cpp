@@ -125,6 +125,12 @@ void SearchShaderGL::setUniformLocations()
    addUniformLocation( "Dim" );
 }
 
+void InitializeKNNShaderGL::setUniformLocations()
+{
+   addUniformLocation( "QueryNum" );
+   addUniformLocation( "NeighborNum" );
+}
+
 void FindNearestNeighborsShaderGL::setUniformLocations()
 {
    addUniformLocation( "NodeIndex" );

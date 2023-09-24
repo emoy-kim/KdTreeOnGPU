@@ -268,6 +268,20 @@ public:
    void setUniformLocations() override {}
 };
 
+class InitializeKNNShaderGL final : public ShaderGL
+{
+public:
+   InitializeKNNShaderGL() = default;
+   ~InitializeKNNShaderGL() override = default;
+
+   InitializeKNNShaderGL(const InitializeKNNShaderGL&) = delete;
+   InitializeKNNShaderGL(const InitializeKNNShaderGL&&) = delete;
+   InitializeKNNShaderGL& operator=(const InitializeKNNShaderGL&) = delete;
+   InitializeKNNShaderGL& operator=(const InitializeKNNShaderGL&&) = delete;
+
+   void setUniformLocations() override;
+};
+
 class FindNearestNeighborsShaderGL final : public ShaderGL
 {
 public:

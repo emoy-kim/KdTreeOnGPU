@@ -131,6 +131,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
                Renderer->NeighborNum = std::min( Renderer->NeighborNum + 1, 100 );
                std::cout << ">> Search Points with " << Renderer->NeighborNum << "-nn\n";
             }
+            Renderer->UpdateQuery = true;
          }
          break;
       case GLFW_KEY_DOWN:
@@ -143,6 +144,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
                Renderer->NeighborNum = std::max( Renderer->NeighborNum - 1, 1 );
                std::cout << ">> Search Points with " << Renderer->NeighborNum << "-nn\n";
             }
+            Renderer->UpdateQuery = true;
          }
          break;
       case GLFW_KEY_X:
@@ -367,6 +369,11 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/kdtree/copy_found_points.comp").c_str()
    );
    KdtreeBuilder.CopyFoundPoints->setUniformLocations();
+
+   KdtreeBuilder.InitializeKNN->setComputeShader(
+      std::string(shader_directory_path + "/kdtree/initialize_knn.comp").c_str()
+   );
+   KdtreeBuilder.InitializeKNN->setUniformLocations();
 
    KdtreeBuilder.FindNearestNeighbors->setComputeShader(
       std::string(shader_directory_path + "/kdtree/find_nearest_neighbors.comp").c_str()
@@ -851,11 +858,6 @@ void RendererGL::search()
 
          assert( query_num == 1 && FoundPointNum + 1 <= FoundPoints->getVertexNum() );
 
-         if (FoundPointNum > 0) {
-            std::cout << ">> " << FoundPointNum << " nodes within " << SearchRadius << " units of ("
-               << query.x << ", " << query.y << ", " << query.z << ") in all dimensions\n";
-         }
-
          glUseProgram( KdtreeBuilder.CopyFoundPoints->getShaderProgram() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, FoundPoints->getVBO() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchLists() );
@@ -893,6 +895,13 @@ void RendererGL::findNearestNeighbors()
       if (getQuery( query )) {
          Object->prepareKNN( { query }, NeighborNum );
          const int block_num = divideUp( query_num, KdtreeGL::WarpSize );
+         glUseProgram( KdtreeBuilder.InitializeKNN->getShaderProgram() );
+         KdtreeBuilder.InitializeKNN->uniform1i( "QueryNum", query_num );
+         KdtreeBuilder.InitializeKNN->uniform1i( "NeighborNum", NeighborNum );
+         glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
+         glDispatchCompute( block_num, 1, 1 );
+         glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
+
          glUseProgram( KdtreeBuilder.FindNearestNeighbors->getShaderProgram() );
          KdtreeBuilder.FindNearestNeighbors->uniform1i( "NodeIndex", Object->getRootNode() );
          KdtreeBuilder.FindNearestNeighbors->uniform1i( "QueryNum", query_num );
@@ -909,9 +918,6 @@ void RendererGL::findNearestNeighbors()
          FoundPointNum = NeighborNum;
 
          assert( query_num == 1 && FoundPointNum + 1 <= FoundPoints->getVertexNum() );
-
-         std::cout << ">> " << FoundPointNum << " nearest neighbors of ("
-            << query.x << ", " << query.y << ", " << query.z << ") in all dimensions\n";
 
          glUseProgram( KdtreeBuilder.CopyEncodedFoundPoints->getShaderProgram() );
          KdtreeBuilder.CopyEncodedFoundPoints->uniform1i( "NeighborNum", NeighborNum );

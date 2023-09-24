@@ -176,7 +176,7 @@ void KdtreeGL::releaseSearching()
 void KdtreeGL::prepareKNN(const std::vector<glm::vec3>& queries, int neighbor_num)
 {
    const auto query_num = static_cast<int>(queries.size());
-   Search.Lists = addCustomBufferObject<uint64_t>( "Lists", neighbor_num * query_num );
+   Search.Lists = addCustomBufferObject<uint>( "Lists", neighbor_num * query_num * 2 );
    Search.Queries = addCustomBufferObject<float>( "Queries", query_num * Dim );
    glNamedBufferSubData(
       Search.Queries, 0,

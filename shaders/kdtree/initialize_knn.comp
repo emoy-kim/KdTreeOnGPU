@@ -1,0 +1,23 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, std430) buffer Lists { uint lists[]; };
+
+uniform int QueryNum;
+uniform int NeighborNum;
+
+void main()
+{
+   int index = int(gl_GlobalInvocationID.x);
+   int step = int(gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+   uint distance = floatBitsToUint( 1.0f / 0.0f );
+   uint node_index = uint(-1);
+   for (int i = index; i < QueryNum; i += step) {
+      for (int j = 0; j < NeighborNum; ++j) {
+         int k = (i * NeighborNum + j) * 2;
+         lists[k] = distance;
+         lists[k + 1] = node_index;
+      }
+   }
+}
