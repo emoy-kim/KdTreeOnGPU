@@ -2,6 +2,8 @@
 
   This code is about building a K-d tree on GPU with CUDA & OpenGL compute shaders including the multi-threading version on the CPU.
   
+  Visit [here](https://jeesunkim.com/projects/kdtree/) to find more.
+  
 ![result](https://github.com/emoy-kim/KdTreeOnGPU/assets/17864157/7118b994-769e-4616-ac01-61ff07cb8c84)
 
 
