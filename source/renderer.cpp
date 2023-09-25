@@ -8,7 +8,7 @@ RendererGL::RendererGL() :
    MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
    TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
    SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
-   SearchAlgorithm( SEARCH_ALGORITHM::KNN )
+   SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
 
 {
    Renderer = this;
