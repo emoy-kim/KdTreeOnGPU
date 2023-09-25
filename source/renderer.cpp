@@ -71,7 +71,7 @@ void RendererGL::initialize()
 
    glEnable( GL_CULL_FACE );
    glEnable( GL_DEPTH_TEST );
-   glClearColor( 0.97, 0.47f, 0.7f, 1.0f );
+   glClearColor( 0.157f, 0.157f, 0.169f, 1.0f );
 
    Texter->initialize( 30.0f );
 
@@ -107,7 +107,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
    switch (key) {
       case GLFW_KEY_1:
          if (!Renderer->Pause) {
-            Renderer->FoundPointNum = 0;
+            Renderer->UpdateQuery = true;
             Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::RADIUS;
             std::cout << ">> Search Points within Radius " << Renderer->SearchRadius << "\n";
@@ -115,7 +115,7 @@ void RendererGL::keyboard(GLFWwindow* window, int key, int scancode, int action,
          break;
       case GLFW_KEY_2:
          if (!Renderer->Pause) {
-            Renderer->FoundPointNum = 0;
+            Renderer->UpdateQuery = true;
             Renderer->RenderFounds = true;
             Renderer->SearchAlgorithm = SEARCH_ALGORITHM::KNN;
             std::cout << ">> Search with " << Renderer->NeighborNum << "-nn\n";
@@ -229,8 +229,8 @@ void RendererGL::setLights()
 {
    glm::vec4 light_position(0.0f, 500.0f, 500.0f, 1.0f);
    glm::vec4 ambient_color(0.1f, 0.1f, 0.1f, 1.0f);
-   glm::vec4 diffuse_color(0.7f, 0.7f, 0.7f, 1.0f);
-   glm::vec4 specular_color(0.7f, 0.7f, 0.7f, 1.0f);
+   glm::vec4 diffuse_color(0.98f, 0.941f, 0.902f, 1.0f);
+   glm::vec4 specular_color(0.98f, 0.941f, 0.902f, 1.0f);
    const glm::vec3 reference_position(0.0f, 150.0f, 0.0f);
    Lights->addLight(
       light_position, ambient_color, diffuse_color, specular_color,
@@ -255,7 +255,7 @@ void RendererGL::setObject() const
       GL_TRIANGLES,
       std::string(sample_directory_path + "/Bunny/bunny.obj")
    );
-   Object->setDiffuseReflectionColor( { 0.3f, 0.3f, 0.5f, 1.0f } );
+   Object->setDiffuseReflectionColor( { 0.949f, 0.922f, 0.886f, 1.0f } );
    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
    Timer->ObjectLoad =
       static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()) * 1e-9;
@@ -950,6 +950,8 @@ void RendererGL::findNearestNeighbors()
 
 void RendererGL::drawObject() const
 {
+   glLineWidth( 2.0f );
+   glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
    glViewport( 0, 0, FrameWidth, FrameHeight );
    glBindFramebuffer( GL_FRAMEBUFFER, 0 );
    glUseProgram( SceneShader->getShaderProgram() );
@@ -960,6 +962,8 @@ void RendererGL::drawObject() const
    glBindVertexArray( Object->getVAO() );
    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, Object->getIBO() );
    glDrawElements( Object->getDrawMode(), Object->getIndexNum(), GL_UNSIGNED_INT, nullptr );
+   glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+   glLineWidth( 1.0f );
 }
 
 void RendererGL::drawText(const std::string& text, glm::vec2 start_position) const
