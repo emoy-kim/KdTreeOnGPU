@@ -17,3 +17,10 @@
   * **c key**: capture the current frame
   * **SPACE key**: pause rendering
   * **q/ESC key**: exit
+
+
+## Reference
+
+  [1] [https://github.com/chezruss/kd-tree](https://github.com/chezruss/kd-tree)
+  [2] [https://github.com/johnarobinson77/KdTreeGPU](https://github.com/johnarobinson77/KdTreeGPU)
+  [3] [https://github.com/ingowald/cudaKDTree](https://github.com/ingowald/cudaKDTree) 
