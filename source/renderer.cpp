@@ -57,6 +57,7 @@ void RendererGL::initialize()
    glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 6 );
    glfwWindowHint( GLFW_DOUBLEBUFFER, GLFW_TRUE );
    glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
+   glfwWindowHint( GLFW_VISIBLE, GLFW_FALSE );
    glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE );
 
    Window = glfwCreateWindow( FrameWidth, FrameHeight, "K-d Tree", nullptr, nullptr );
@@ -1041,6 +1042,7 @@ void RendererGL::play()
    setShaders();
    buildKdtree();
 
+   glfwShowWindow( Window );
    while (!glfwWindowShouldClose( Window )) {
       if (!Pause) render();
 
