@@ -13,7 +13,6 @@ set(
 		source/light.cpp
 		source/camera.cpp
 		source/shader.cpp
-		source/kdtree_shader.cpp
 		source/kdtree.cpp
 		source/object.cpp
 		source/kdtree_object.cpp
