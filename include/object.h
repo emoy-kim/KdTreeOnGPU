@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shader.h"
+#include "base.h"
 
 class ObjectGL
 {
@@ -45,7 +45,6 @@ public:
    int addTexture(const std::string& texture_file_path, bool is_grayscale = false);
    void addTexture(int width, int height, bool is_grayscale = false);
    int addTexture(const uint8_t* image_buffer, int width, int height, bool is_grayscale = false);
-   void transferUniformsToShader(const ShaderGL* shader) const;
    void replaceVertices(const std::vector<glm::vec3>& vertices, bool normals_exist, bool textures_exist);
    void replaceVertices(const std::vector<float>& vertices, bool normals_exist, bool textures_exist);
    void releaseCustomBuffer(const std::string& name)
@@ -64,11 +63,11 @@ public:
    [[nodiscard]] GLsizei getIndexNum() const { return static_cast<GLsizei>(IndexBuffer.size()); }
    [[nodiscard]] GLuint getTextureID(int index) const { return TextureID[index]; }
    [[nodiscard]] int getTextureNum() const { return static_cast<int>(TextureID.size()); }
-   [[nodiscard]] GLuint getCustomBufferID(const std::string& name) const
-   {
-      const auto it = CustomBuffers.find( name );
-      return it == CustomBuffers.end() ? 0 : it->second;
-   }
+   [[nodiscard]] glm::vec4 getEmissionColor() const { return EmissionColor; }
+   [[nodiscard]] glm::vec4 getAmbientReflectionColor() const { return AmbientReflectionColor; }
+   [[nodiscard]] glm::vec4 getDiffuseReflectionColor() const { return DiffuseReflectionColor; }
+   [[nodiscard]] glm::vec4 getSpecularReflectionColor() const { return SpecularReflectionColor; }
+   [[nodiscard]] float getSpecularReflectionExponent() const { return SpecularReflectionExponent; }
 
    template<typename T>
    [[nodiscard]] GLuint addCustomBufferObject(const std::string& name, int data_size)

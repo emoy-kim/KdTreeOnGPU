@@ -53,22 +53,3 @@ void LightGL::deactivateLight(const int& light_index)
    if (light_index >= TotalLightNum) return;
    IsActivated[light_index] = false;
 }
-
-void LightGL::transferUniformsToShader(const ShaderGL* shader)
-{
-   glUniform1i( shader->getLightAvailabilityLocation(), TurnLightOn ? 1 : 0 );
-   glUniform1i( shader->getLightNumLocation(), static_cast<GLint>(TotalLightNum) );
-   glUniform4fv( shader->getGlobalAmbientLocation(), 1, &GlobalAmbientColor[0] );
-
-   for (int i = 0; i < TotalLightNum; ++i) {
-      glUniform1i( shader->getLightSwitchLocation( i ), IsActivated[0] ? 1 : 0 );
-      glUniform4fv( shader->getLightPositionLocation( i ), 1, &Positions[i][0] );
-      glUniform4fv( shader->getLightAmbientLocation( i ), 1, &AmbientColors[i][0] );
-      glUniform4fv( shader->getLightDiffuseLocation( i ), 1, &DiffuseColors[i][0] );
-      glUniform4fv( shader->getLightSpecularLocation( i ), 1, &SpecularColors[i][0] );
-      glUniform3fv( shader->getLightSpotlightDirectionLocation( i ), 1, &SpotlightDirections[i][0] );
-      glUniform1f( shader->getLightSpotlightCutoffAngleLocation( i ), SpotlightCutoffAngles[i] );
-      glUniform1f( shader->getLightSpotlightFeatherLocation( i ), SpotlightFeathers[i] );
-      glUniform1f( shader->getLightFallOffRadiusLocation( i ), FallOffRadii[i] );
-   }
-}

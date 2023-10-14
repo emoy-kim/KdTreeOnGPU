@@ -6,8 +6,8 @@ RendererGL::RendererGL() :
    QueryPoint( -1 ), ClickedPoint( -1 ), Texter( std::make_unique<TextGL>() ), Lights( std::make_unique<LightGL>() ),
    Object( std::make_unique<KdtreeGL>() ), FoundPoints( std::make_unique<ObjectGL>() ),
    MainCamera( std::make_unique<CameraGL>() ), TextCamera( std::make_unique<CameraGL>() ),
-   TextShader( std::make_unique<ShaderGL>() ), PointShader( std::make_unique<ShaderGL>() ),
-   SceneShader( std::make_unique<ShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
+   TextShader( std::make_unique<TextShaderGL>() ), PointShader( std::make_unique<PointShaderGL>() ),
+   SceneShader( std::make_unique<SceneShaderGL>() ), Timer( std::make_unique<TimeCheck>() ), KdtreeBuilder(),
    SearchAlgorithm( SEARCH_ALGORITHM::RADIUS )
 
 {
@@ -280,9 +280,6 @@ void RendererGL::setShaders() const
       std::string(shader_directory_path + "/scene_shader.vert").c_str(),
       std::string(shader_directory_path + "/scene_shader.frag").c_str()
    );
-   TextShader->setTextUniformLocations();
-   PointShader->setPointUniformLocations();
-   SceneShader->setSceneUniformLocations( Lights->getTotalLightNum() );
 
    KdtreeBuilder.Initialize->setComputeShader( std::string(shader_directory_path + "/kdtree/initialize.comp").c_str() );
    KdtreeBuilder.Initialize->setUniformLocations();
@@ -880,7 +877,7 @@ void RendererGL::search()
       glViewport( 0, 0, FrameWidth, FrameHeight );
       glBindFramebuffer( GL_FRAMEBUFFER, 0 );
       glUseProgram( PointShader->getShaderProgram() );
-      PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
+      PointShader->uniformMat4fv( PointShaderGL::UNIFORM::ModelViewProjectionMatrix, MainCamera->getProjectionMatrix() * MainCamera->getViewMatrix() );
       glBindVertexArray( FoundPoints->getVAO() );
       glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPointNum + 1 );
       glEnable( GL_DEPTH_TEST );
@@ -941,7 +938,7 @@ void RendererGL::findNearestNeighbors()
       glViewport( 0, 0, FrameWidth, FrameHeight );
       glBindFramebuffer( GL_FRAMEBUFFER, 0 );
       glUseProgram( PointShader->getShaderProgram() );
-      PointShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
+      PointShader->uniformMat4fv( PointShaderGL::UNIFORM::ModelViewProjectionMatrix, MainCamera->getProjectionMatrix() * MainCamera->getViewMatrix() );
       glBindVertexArray( FoundPoints->getVAO() );
       glDrawArrays( FoundPoints->getDrawMode(), 0, FoundPointNum + 1 );
       glEnable( GL_DEPTH_TEST );
@@ -951,15 +948,39 @@ void RendererGL::findNearestNeighbors()
 
 void RendererGL::drawObject() const
 {
+   using u = SceneShaderGL::UNIFORM;
+
    glLineWidth( 2.0f );
    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
    glViewport( 0, 0, FrameWidth, FrameHeight );
    glBindFramebuffer( GL_FRAMEBUFFER, 0 );
    glUseProgram( SceneShader->getShaderProgram() );
-   Lights->transferUniformsToShader( SceneShader.get() );
-   Object->transferUniformsToShader( SceneShader.get() );
-   SceneShader->transferBasicTransformationUniforms( glm::mat4(1.0f), MainCamera.get() );
-   SceneShader->uniform1i( "UseTexture", 0 );
+   SceneShader->uniform1i( u::UseTexture, 0 );
+   SceneShader->uniform1i( u::UseLight, Lights->isLightOn() ? 1 : 0 );
+   SceneShader->uniformMat4fv( u::WorldMatrix, glm::mat4(1.0f) );
+   SceneShader->uniformMat4fv( u::ViewMatrix, MainCamera->getViewMatrix() );
+   SceneShader->uniformMat4fv( u::ModelViewProjectionMatrix, MainCamera->getProjectionMatrix() * MainCamera->getViewMatrix() );
+   SceneShader->uniform4fv( u::Material + u::MaterialEmissionColor, Object->getEmissionColor() );
+   SceneShader->uniform4fv( u::Material + u::MaterialAmbientColor, Object->getAmbientReflectionColor() );
+   SceneShader->uniform4fv( u::Material + u::MaterialDiffuseColor, Object->getDiffuseReflectionColor() );
+   SceneShader->uniform4fv( u::Material + u::MaterialSpecularColor, Object->getSpecularReflectionColor() );
+   SceneShader->uniform1f( u::Material + u::MaterialSpecularExponent, Object->getSpecularReflectionExponent() );
+   if (Lights->isLightOn()) {
+      SceneShader->uniform1i( u::LightNum, Lights->getTotalLightNum() );
+      SceneShader->uniform4fv( u::GlobalAmbient, Lights->getGlobalAmbientColor() );
+      for (int i = 0; i < Lights->getTotalLightNum(); ++i) {
+         const int offset = u::Lights + u::LightUniformNum * i;
+         SceneShader->uniform1i( offset + u::LightSwitch, Lights->isActivated( i ) ? 1 : 0 );
+         SceneShader->uniform4fv( offset + u::LightPosition, Lights->getPosition( i ) );
+         SceneShader->uniform4fv( offset + u::LightAmbientColor, Lights->getAmbientColors( i ) );
+         SceneShader->uniform4fv( offset + u::LightDiffuseColor, Lights->getDiffuseColors( i ) );
+         SceneShader->uniform4fv( offset + u::LightSpecularColor, Lights->getSpecularColors( i ) );
+         SceneShader->uniform3fv( offset + u::SpotlightDirection, Lights->getSpotlightDirections( i ) );
+         SceneShader->uniform1f( offset + u::SpotlightCutoffAngle, Lights->getSpotlightCutoffAngles( i ) );
+         SceneShader->uniform1f( offset + u::SpotlightFeather, Lights->getSpotlightFeathers( i ) );
+         SceneShader->uniform1f( offset + u::FallOffRadius, Lights->getFallOffRadii( i ) );
+      }
+   }
    glBindVertexArray( Object->getVAO() );
    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, Object->getIBO() );
    glDrawElements( Object->getDrawMode(), Object->getIndexNum(), GL_UNSIGNED_INT, nullptr );
@@ -997,8 +1018,8 @@ void RendererGL::drawText(const std::string& text, glm::vec2 start_position) con
       const glm::mat4 to_world =
          glm::translate( glm::mat4(1.0f), glm::vec3(position, 0.0f) ) *
          glm::scale( glm::mat4(1.0f), glm::vec3(glyph->Size.x, glyph->Size.y, 1.0f) );
-      TextShader->transferBasicTransformationUniforms( to_world, TextCamera.get() );
-      TextShader->uniform2fv( "TextScale", glyph->TopRightTextureCoord );
+      TextShader->uniformMat4fv( TextShaderGL::UNIFORM::ModelViewProjectionMatrix, TextCamera->getProjectionMatrix() * TextCamera->getViewMatrix() * to_world );
+      TextShader->uniform2fv( TextShaderGL::UNIFORM::TextScale, glyph->TopRightTextureCoord );
       glBindTextureUnit( 0, glyph_object->getTextureID( glyph->TextureIDIndex ) );
       glDrawArrays( glyph_object->getDrawMode(), 0, glyph_object->getVertexNum() );
 

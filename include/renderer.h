@@ -9,6 +9,9 @@
 #include "base.h"
 #include "text.h"
 #include "light.h"
+#include "camera.h"
+#include "object.h"
+#include "shader.h"
 #include "kdtree_object.h"
 #include "kdtree_shader.h"
 
@@ -108,9 +111,9 @@ private:
    std::unique_ptr<ObjectGL> FoundPoints;
    std::unique_ptr<CameraGL> MainCamera;
    std::unique_ptr<CameraGL> TextCamera;
-   std::unique_ptr<ShaderGL> TextShader;
-   std::unique_ptr<ShaderGL> PointShader;
-   std::unique_ptr<ShaderGL> SceneShader;
+   std::unique_ptr<TextShaderGL> TextShader;
+   std::unique_ptr<PointShaderGL> PointShader;
+   std::unique_ptr<SceneShaderGL> SceneShader;
    std::unique_ptr<TimeCheck> Timer;
    KdtreeBuild KdtreeBuilder;
    SEARCH_ALGORITHM SearchAlgorithm;

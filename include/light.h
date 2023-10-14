@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shader.h"
+#include "base.h"
 
 class LightGL final
 {
@@ -22,10 +22,17 @@ public:
    );
    void activateLight(const int& light_index);
    void deactivateLight(const int& light_index);
-   void transferUniformsToShader(const ShaderGL* shader);
    [[nodiscard]] int getTotalLightNum() const { return TotalLightNum; }
-   [[nodiscard]] glm::vec4 getLightPosition(int light_index) { return Positions[light_index]; }
-   [[nodiscard]] glm::vec3 getSpotlightDirection(int light_index) { return SpotlightDirections[light_index]; }
+   [[nodiscard]] glm::vec4 getGlobalAmbientColor() { return GlobalAmbientColor; }
+   [[nodiscard]] bool isActivated(int light_index) { return IsActivated[light_index]; }
+   [[nodiscard]] glm::vec4 getPosition(int light_index) { return Positions[light_index]; }
+   [[nodiscard]] glm::vec4 getAmbientColors(int light_index) { return AmbientColors[light_index]; }
+   [[nodiscard]] glm::vec4 getDiffuseColors(int light_index) { return DiffuseColors[light_index]; }
+   [[nodiscard]] glm::vec4 getSpecularColors(int light_index) { return SpecularColors[light_index]; }
+   [[nodiscard]] glm::vec3 getSpotlightDirections(int light_index) { return SpotlightDirections[light_index]; }
+   [[nodiscard]] float getSpotlightCutoffAngles(int light_index) { return SpotlightCutoffAngles[light_index]; }
+   [[nodiscard]] float getSpotlightFeathers(int light_index) { return SpotlightFeathers[light_index]; }
+   [[nodiscard]] float getFallOffRadii(int light_index) { return FallOffRadii[light_index]; }
 
 private:
    bool TurnLightOn;
