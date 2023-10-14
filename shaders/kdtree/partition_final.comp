@@ -15,11 +15,11 @@ layout (binding = 1, std430) buffer MidReferences { int mid_references[]; };
 layout (binding = 2, std430) buffer LastMidReferences { int last_mid_references[]; };
 layout (binding = 3, std430) buffer PrimaryReference { int primary_reference[]; };
 
-uniform int Start;
-uniform int End;
-uniform int Depth;
-uniform int MidReferenceOffset;
-uniform int LastMidReferenceOffset;
+layout (location = 0) uniform int Start;
+layout (location = 1) uniform int End;
+layout (location = 2) uniform int Depth;
+layout (location = 3) uniform int MidReferenceOffset;
+layout (location = 4) uniform int LastMidReferenceOffset;
 const int WarpSize = 32;
 
 void main()

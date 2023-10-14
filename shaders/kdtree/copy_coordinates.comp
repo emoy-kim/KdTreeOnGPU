@@ -6,9 +6,9 @@ layout (binding = 0, std430) buffer Buffer { float target[]; };
 layout (binding = 1, std430) buffer Reference { int reference[]; };
 layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
 
-uniform int Size;
-uniform int Axis;
-uniform int Dim;
+layout (location = 0) uniform int Size;
+layout (location = 1) uniform int Axis;
+layout (location = 2) uniform int Dim;
 
 void main()
 {

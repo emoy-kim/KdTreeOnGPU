@@ -16,11 +16,11 @@ layout (binding = 2, std430) buffer Root { KdtreeNode root[]; };
 layout (binding = 3, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 4, std430) buffer Queries { float queries[]; };
 
-uniform float SearchRadius;
-uniform int NodeIndex;
-uniform int QueryNum;
-uniform int Size;
-uniform int Dim;
+layout (location = 0) uniform float SearchRadius;
+layout (location = 1) uniform int NodeIndex;
+layout (location = 2) uniform int QueryNum;
+layout (location = 3) uniform int Size;
+layout (location = 4) uniform int Dim;
 
 float compareSuperKey(in int offset_a, in int offset_b, in int axis, in float delta)
 {

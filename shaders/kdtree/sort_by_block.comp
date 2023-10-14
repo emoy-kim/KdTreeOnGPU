@@ -8,9 +8,9 @@ layout (binding = 2, std430) buffer InReference { int source_reference[]; };
 layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
 layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
 
-uniform int Size;
-uniform int Axis;
-uniform int Dim;
+layout (location = 0) uniform int Size;
+layout (location = 1) uniform int Axis;
+layout (location = 2) uniform int Dim;
 const int WarpSize = 32;
 const int SharedSize = WarpSize * WarpSize;
 

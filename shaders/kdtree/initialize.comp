@@ -12,7 +12,7 @@ struct KdtreeNode
 
 layout (binding = 0, std430) buffer Root { KdtreeNode root[]; };
 
-uniform int Size;
+layout (location = 0) uniform int Size;
 
 void main()
 {

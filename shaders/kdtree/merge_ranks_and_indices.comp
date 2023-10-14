@@ -5,9 +5,9 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 layout (binding = 0, std430) buffer Limits { int limits[]; };
 layout (binding = 1, std430) buffer Ranks { int ranks[]; };
 
-uniform int SortedSize;
-uniform int Size;
-uniform int TotalThreadNum;
+layout (location = 0) uniform int SortedSize;
+layout (location = 1) uniform int Size;
+layout (location = 2) uniform int TotalThreadNum;
 const int SampleStride = 128;
 
 int getSampleNum(in int x)

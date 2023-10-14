@@ -8,11 +8,11 @@ layout (binding = 2, std430) buffer InReference { int source_reference[]; };
 layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
 layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
 
-uniform int StartOffset;
-uniform int SortedSize;
-uniform int Size;
-uniform int Axis;
-uniform int Dim;
+layout (location = 0) uniform int StartOffset;
+layout (location = 1) uniform int SortedSize;
+layout (location = 2) uniform int Size;
+layout (location = 3) uniform int Axis;
+layout (location = 4) uniform int Dim;
 
 float compareSuperKey(in int offset_a, in int offset_b)
 {

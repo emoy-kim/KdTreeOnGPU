@@ -22,11 +22,11 @@ layout (binding = 7, std430) buffer InReference { int source_reference[]; };
 layout (binding = 8, std430) buffer PrimaryReference { int primary_reference[]; };
 layout (binding = 9, std430) buffer Coordinates { float coordinates[]; };
 
-uniform int Start;
-uniform int End;
-uniform int Axis;
-uniform int Dim;
-uniform int Depth;
+layout (location = 0) uniform int Start;
+layout (location = 1) uniform int End;
+layout (location = 2) uniform int Axis;
+layout (location = 3) uniform int Dim;
+layout (location = 4) uniform int Depth;
 const int WarpSize = 32;
 const int SharedSize = WarpSize * WarpSize;
 

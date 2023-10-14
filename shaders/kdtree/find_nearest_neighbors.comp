@@ -15,11 +15,11 @@ layout (binding = 1, std430) buffer Root { KdtreeNode root[]; };
 layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 3, std430) buffer Queries { float queries[]; };
 
-uniform int NodeIndex;
-uniform int QueryNum;
-uniform int NeighborNum;
-uniform int Size;
-uniform int Dim;
+layout (location = 0) uniform int NodeIndex;
+layout (location = 1) uniform int QueryNum;
+layout (location = 2) uniform int NeighborNum;
+layout (location = 3) uniform int Size;
+layout (location = 4) uniform int Dim;
 const float infinity = 1.0f / 0.0f;
 
 float push(in int list_offset, in int node_index, in float squared_distance)

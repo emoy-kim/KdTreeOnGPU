@@ -16,7 +16,7 @@ layout (binding = 1, std430) buffer NextChild { int next_child[]; };
 layout (binding = 2, std430) buffer Child { int child[]; };
 layout (binding = 3, std430) buffer Root { KdtreeNode root[]; };
 
-uniform int Size;
+layout (location = 0) uniform int Size;
 const int WarpSize = 32;
 const int SharedSize = WarpSize * WarpSize;
 

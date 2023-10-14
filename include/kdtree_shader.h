@@ -5,6 +5,8 @@
 class InitializeShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0 };
+
    InitializeShaderGL() = default;
    ~InitializeShaderGL() override = default;
 
@@ -12,13 +14,13 @@ public:
    InitializeShaderGL(const InitializeShaderGL&&) = delete;
    InitializeShaderGL& operator=(const InitializeShaderGL&) = delete;
    InitializeShaderGL& operator=(const InitializeShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class InitializeReferenceShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0 };
+
    InitializeReferenceShaderGL() = default;
    ~InitializeReferenceShaderGL() override = default;
 
@@ -26,13 +28,13 @@ public:
    InitializeReferenceShaderGL(const InitializeReferenceShaderGL&&) = delete;
    InitializeReferenceShaderGL& operator=(const InitializeReferenceShaderGL&) = delete;
    InitializeReferenceShaderGL& operator=(const InitializeReferenceShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class CopyCoordinatesShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0, Axis, Dim };
+
    CopyCoordinatesShaderGL() = default;
    ~CopyCoordinatesShaderGL() override = default;
 
@@ -40,13 +42,13 @@ public:
    CopyCoordinatesShaderGL(const CopyCoordinatesShaderGL&&) = delete;
    CopyCoordinatesShaderGL& operator=(const CopyCoordinatesShaderGL&) = delete;
    CopyCoordinatesShaderGL& operator=(const CopyCoordinatesShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class SortByBlockShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0, Axis, Dim };
+
    SortByBlockShaderGL() = default;
    ~SortByBlockShaderGL() override = default;
 
@@ -54,13 +56,13 @@ public:
    SortByBlockShaderGL(const SortByBlockShaderGL&&) = delete;
    SortByBlockShaderGL& operator=(const SortByBlockShaderGL&) = delete;
    SortByBlockShaderGL& operator=(const SortByBlockShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class SortLastBlockShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { StartOffset = 0, SortedSize, Size, Axis, Dim };
+
    SortLastBlockShaderGL() = default;
    ~SortLastBlockShaderGL() override = default;
 
@@ -68,13 +70,13 @@ public:
    SortLastBlockShaderGL(const SortLastBlockShaderGL&&) = delete;
    SortLastBlockShaderGL& operator=(const SortLastBlockShaderGL&) = delete;
    SortLastBlockShaderGL& operator=(const SortLastBlockShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class GenerateSampleRanksShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SortedSize = 0, Size, Axis, Dim, TotalThreadNum };
+
    GenerateSampleRanksShaderGL() = default;
    ~GenerateSampleRanksShaderGL() override = default;
 
@@ -82,13 +84,13 @@ public:
    GenerateSampleRanksShaderGL(const GenerateSampleRanksShaderGL&&) = delete;
    GenerateSampleRanksShaderGL& operator=(const GenerateSampleRanksShaderGL&) = delete;
    GenerateSampleRanksShaderGL& operator=(const GenerateSampleRanksShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class MergeRanksAndIndicesShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SortedSize = 0, Size, TotalThreadNum };
+
    MergeRanksAndIndicesShaderGL() = default;
    ~MergeRanksAndIndicesShaderGL() override = default;
 
@@ -96,13 +98,13 @@ public:
    MergeRanksAndIndicesShaderGL(const MergeRanksAndIndicesShaderGL&&) = delete;
    MergeRanksAndIndicesShaderGL& operator=(const MergeRanksAndIndicesShaderGL&) = delete;
    MergeRanksAndIndicesShaderGL& operator=(const MergeRanksAndIndicesShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class MergeReferencesShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SortedSize = 0, Size, Axis, Dim };
+
    MergeReferencesShaderGL() = default;
    ~MergeReferencesShaderGL() override = default;
 
@@ -110,13 +112,13 @@ public:
    MergeReferencesShaderGL(const MergeReferencesShaderGL&&) = delete;
    MergeReferencesShaderGL& operator=(const MergeReferencesShaderGL&) = delete;
    MergeReferencesShaderGL& operator=(const MergeReferencesShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class RemoveDuplicatesShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SizePerWarp = 0, Size, Axis, Dim };
+
    RemoveDuplicatesShaderGL() = default;
    ~RemoveDuplicatesShaderGL() override = default;
 
@@ -124,13 +126,13 @@ public:
    RemoveDuplicatesShaderGL(const RemoveDuplicatesShaderGL&&) = delete;
    RemoveDuplicatesShaderGL& operator=(const RemoveDuplicatesShaderGL&) = delete;
    RemoveDuplicatesShaderGL& operator=(const RemoveDuplicatesShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class RemoveGapsShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SizePerWarp = 0, Size };
+
    RemoveGapsShaderGL() = default;
    ~RemoveGapsShaderGL() override = default;
 
@@ -138,13 +140,13 @@ public:
    RemoveGapsShaderGL(const RemoveGapsShaderGL&&) = delete;
    RemoveGapsShaderGL& operator=(const RemoveGapsShaderGL&) = delete;
    RemoveGapsShaderGL& operator=(const RemoveGapsShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class PartitionShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Start = 0, End, Axis, Dim, Depth };
+
    PartitionShaderGL() = default;
    ~PartitionShaderGL() override = default;
 
@@ -152,13 +154,13 @@ public:
    PartitionShaderGL(const PartitionShaderGL&&) = delete;
    PartitionShaderGL& operator=(const PartitionShaderGL&) = delete;
    PartitionShaderGL& operator=(const PartitionShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class RemovePartitionGapsShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Start = 0, End, Depth };
+
    RemovePartitionGapsShaderGL() = default;
    ~RemovePartitionGapsShaderGL() override = default;
 
@@ -166,13 +168,13 @@ public:
    RemovePartitionGapsShaderGL(const RemovePartitionGapsShaderGL&&) = delete;
    RemovePartitionGapsShaderGL& operator=(const RemovePartitionGapsShaderGL&) = delete;
    RemovePartitionGapsShaderGL& operator=(const RemovePartitionGapsShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class SmallPartitionShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Start = 0, End, Axis, Dim, Depth, MaxControllableDepthForWarp };
+
    SmallPartitionShaderGL() = default;
    ~SmallPartitionShaderGL() override = default;
 
@@ -180,13 +182,13 @@ public:
    SmallPartitionShaderGL(const SmallPartitionShaderGL&&) = delete;
    SmallPartitionShaderGL& operator=(const SmallPartitionShaderGL&) = delete;
    SmallPartitionShaderGL& operator=(const SmallPartitionShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class CopyReferenceShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0 };
+
    CopyReferenceShaderGL() = default;
    ~CopyReferenceShaderGL() override = default;
 
@@ -194,13 +196,13 @@ public:
    CopyReferenceShaderGL(const CopyReferenceShaderGL&&) = delete;
    CopyReferenceShaderGL& operator=(const CopyReferenceShaderGL&) = delete;
    CopyReferenceShaderGL& operator=(const CopyReferenceShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class PartitionFinalShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Start = 0, End, Depth, MidReferenceOffset, LastMidReferenceOffset };
+
    PartitionFinalShaderGL() = default;
    ~PartitionFinalShaderGL() override = default;
 
@@ -208,13 +210,13 @@ public:
    PartitionFinalShaderGL(const PartitionFinalShaderGL&&) = delete;
    PartitionFinalShaderGL& operator=(const PartitionFinalShaderGL&) = delete;
    PartitionFinalShaderGL& operator=(const PartitionFinalShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class VerifyShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { Size = 0 };
+
    VerifyShaderGL() = default;
    ~VerifyShaderGL() override = default;
 
@@ -222,8 +224,6 @@ public:
    VerifyShaderGL(const VerifyShaderGL&&) = delete;
    VerifyShaderGL& operator=(const VerifyShaderGL&) = delete;
    VerifyShaderGL& operator=(const VerifyShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class SumNodeNumShaderGL final : public ShaderGL
@@ -236,13 +236,13 @@ public:
    SumNodeNumShaderGL(const SumNodeNumShaderGL&&) = delete;
    SumNodeNumShaderGL& operator=(const SumNodeNumShaderGL&) = delete;
    SumNodeNumShaderGL& operator=(const SumNodeNumShaderGL&&) = delete;
-
-   void setUniformLocations() override {}
 };
 
 class SearchShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { SearchRadius = 0, NodeIndex, QueryNum, Size, Dim };
+
    SearchShaderGL() = default;
    ~SearchShaderGL() override = default;
 
@@ -250,8 +250,6 @@ public:
    SearchShaderGL(const SearchShaderGL&&) = delete;
    SearchShaderGL& operator=(const SearchShaderGL&) = delete;
    SearchShaderGL& operator=(const SearchShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class CopyFoundPointsShaderGL final : public ShaderGL
@@ -264,13 +262,13 @@ public:
    CopyFoundPointsShaderGL(const CopyFoundPointsShaderGL&&) = delete;
    CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&) = delete;
    CopyFoundPointsShaderGL& operator=(const CopyFoundPointsShaderGL&&) = delete;
-
-   void setUniformLocations() override {}
 };
 
 class InitializeKNNShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { QueryNum = 0, NeighborNum };
+
    InitializeKNNShaderGL() = default;
    ~InitializeKNNShaderGL() override = default;
 
@@ -278,13 +276,13 @@ public:
    InitializeKNNShaderGL(const InitializeKNNShaderGL&&) = delete;
    InitializeKNNShaderGL& operator=(const InitializeKNNShaderGL&) = delete;
    InitializeKNNShaderGL& operator=(const InitializeKNNShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class FindNearestNeighborsShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { NodeIndex = 0, QueryNum, NeighborNum, Size, Dim };
+
    FindNearestNeighborsShaderGL() = default;
    ~FindNearestNeighborsShaderGL() override = default;
 
@@ -292,13 +290,13 @@ public:
    FindNearestNeighborsShaderGL(const FindNearestNeighborsShaderGL&&) = delete;
    FindNearestNeighborsShaderGL& operator=(const FindNearestNeighborsShaderGL&) = delete;
    FindNearestNeighborsShaderGL& operator=(const FindNearestNeighborsShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };
 
 class CopyEncodedFoundPointsShaderGL final : public ShaderGL
 {
 public:
+   enum UNIFORM { NeighborNum = 0 };
+
    CopyEncodedFoundPointsShaderGL() = default;
    ~CopyEncodedFoundPointsShaderGL() override = default;
 
@@ -306,6 +304,4 @@ public:
    CopyEncodedFoundPointsShaderGL(const CopyEncodedFoundPointsShaderGL&&) = delete;
    CopyEncodedFoundPointsShaderGL& operator=(const CopyEncodedFoundPointsShaderGL&) = delete;
    CopyEncodedFoundPointsShaderGL& operator=(const CopyEncodedFoundPointsShaderGL&&) = delete;
-
-   void setUniformLocations() override;
 };

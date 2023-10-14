@@ -10,10 +10,10 @@ layout (binding = 4, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 5, std430) buffer LeftLimits { int left_limits[]; };
 layout (binding = 6, std430) buffer RightLimits { int right_limits[]; };
 
-uniform int SortedSize;
-uniform int Size;
-uniform int Axis;
-uniform int Dim;
+layout (location = 0) uniform int SortedSize;
+layout (location = 1) uniform int Size;
+layout (location = 2) uniform int Axis;
+layout (location = 3) uniform int Dim;
 const int SampleStride = 128;
 
 shared int shared_reference[SampleStride * 2];

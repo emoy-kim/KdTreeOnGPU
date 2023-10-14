@@ -9,9 +9,9 @@ layout (binding = 2, std430) buffer InRightReference { int source_right_referenc
 layout (binding = 3, std430) buffer LeftChildNumInWarp { int left_child_num_in_warp[]; };
 layout (binding = 4, std430) buffer RightChildNumInWarp { int right_child_num_in_warp[]; };
 
-uniform int Start;
-uniform int End;
-uniform int Depth;
+layout (location = 0) uniform int Start;
+layout (location = 1) uniform int End;
+layout (location = 2) uniform int Depth;
 const int WarpSize = 32;
 
 void main()

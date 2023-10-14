@@ -282,106 +282,84 @@ void RendererGL::setShaders() const
    );
 
    KdtreeBuilder.Initialize->setComputeShader( std::string(shader_directory_path + "/kdtree/initialize.comp").c_str() );
-   KdtreeBuilder.Initialize->setUniformLocations();
 
    KdtreeBuilder.InitializeReference->setComputeShader(
       std::string(shader_directory_path + "/kdtree/initialize_reference.comp").c_str()
    );
-   KdtreeBuilder.InitializeReference->setUniformLocations();
 
    KdtreeBuilder.CopyCoordinates->setComputeShader(
       std::string(shader_directory_path + "/kdtree/copy_coordinates.comp").c_str()
    );
-   KdtreeBuilder.CopyCoordinates->setUniformLocations();
 
    KdtreeBuilder.SortByBlock->setComputeShader(
       std::string(shader_directory_path + "/kdtree/sort_by_block.comp").c_str()
    );
-   KdtreeBuilder.SortByBlock->setUniformLocations();
 
    KdtreeBuilder.SortLastBlock->setComputeShader(
       std::string(shader_directory_path + "/kdtree/sort_last_block.comp").c_str()
    );
-   KdtreeBuilder.SortLastBlock->setUniformLocations();
 
    KdtreeBuilder.GenerateSampleRanks->setComputeShader(
       std::string(shader_directory_path + "/kdtree/generate_sample_ranks.comp").c_str()
    );
-   KdtreeBuilder.GenerateSampleRanks->setUniformLocations();
 
    KdtreeBuilder.MergeRanksAndIndices->setComputeShader(
       std::string(shader_directory_path + "/kdtree/merge_ranks_and_indices.comp").c_str()
    );
-   KdtreeBuilder.MergeRanksAndIndices->setUniformLocations();
 
    KdtreeBuilder.MergeReferences->setComputeShader(
       std::string(shader_directory_path + "/kdtree/merge_references.comp").c_str()
    );
-   KdtreeBuilder.MergeReferences->setUniformLocations();
 
    KdtreeBuilder.RemoveDuplicates->setComputeShader(
       std::string(shader_directory_path + "/kdtree/remove_duplicates.comp").c_str()
    );
-   KdtreeBuilder.RemoveDuplicates->setUniformLocations();
 
    KdtreeBuilder.RemoveGaps->setComputeShader(
       std::string(shader_directory_path + "/kdtree/remove_gaps.comp").c_str()
    );
-   KdtreeBuilder.RemoveGaps->setUniformLocations();
 
    KdtreeBuilder.Partition->setComputeShader( std::string(shader_directory_path + "/kdtree/partition.comp").c_str() );
-   KdtreeBuilder.Partition->setUniformLocations();
 
    KdtreeBuilder.RemovePartitionGaps->setComputeShader(
       std::string(shader_directory_path + "/kdtree/remove_partition_gaps.comp").c_str()
    );
-   KdtreeBuilder.RemovePartitionGaps->setUniformLocations();
 
    KdtreeBuilder.SmallPartition->setComputeShader(
       std::string(shader_directory_path + "/kdtree/small_partition.comp").c_str()
    );
-   KdtreeBuilder.SmallPartition->setUniformLocations();
 
    KdtreeBuilder.CopyReference->setComputeShader(
       std::string(shader_directory_path + "/kdtree/copy_reference.comp").c_str()
    );
-   KdtreeBuilder.CopyReference->setUniformLocations();
 
    KdtreeBuilder.PartitionFinal->setComputeShader(
       std::string(shader_directory_path + "/kdtree/partition_final.comp").c_str()
    );
-   KdtreeBuilder.PartitionFinal->setUniformLocations();
 
    KdtreeBuilder.Verify->setComputeShader( std::string(shader_directory_path + "/kdtree/verify.comp").c_str() );
-   KdtreeBuilder.Verify->setUniformLocations();
 
    KdtreeBuilder.SumNodeNum->setComputeShader(
       std::string(shader_directory_path + "/kdtree/sum_node_num.comp").c_str()
    );
-   KdtreeBuilder.SumNodeNum->setUniformLocations();
 
    KdtreeBuilder.Search->setComputeShader( std::string(shader_directory_path + "/kdtree/search.comp").c_str() );
-   KdtreeBuilder.Search->setUniformLocations();
 
    KdtreeBuilder.CopyFoundPoints->setComputeShader(
       std::string(shader_directory_path + "/kdtree/copy_found_points.comp").c_str()
    );
-   KdtreeBuilder.CopyFoundPoints->setUniformLocations();
 
    KdtreeBuilder.InitializeKNN->setComputeShader(
       std::string(shader_directory_path + "/kdtree/initialize_knn.comp").c_str()
    );
-   KdtreeBuilder.InitializeKNN->setUniformLocations();
 
    KdtreeBuilder.FindNearestNeighbors->setComputeShader(
       std::string(shader_directory_path + "/kdtree/find_nearest_neighbors.comp").c_str()
    );
-   KdtreeBuilder.FindNearestNeighbors->setUniformLocations();
 
    KdtreeBuilder.CopyEncodedFoundPoints->setComputeShader(
       std::string(shader_directory_path + "/kdtree/copy_encoded_found_points.comp").c_str()
    );
-   KdtreeBuilder.CopyEncodedFoundPoints->setUniformLocations();
 }
 
 void RendererGL::sortByAxis(int axis) const
@@ -390,9 +368,9 @@ void RendererGL::sortByAxis(int axis) const
    const int dim = Object->getDimension();
    const GLuint coordinates = Object->getCoordinates();
    glUseProgram( KdtreeBuilder.CopyCoordinates->getShaderProgram() );
-   KdtreeBuilder.CopyCoordinates->uniform1i( "Size", size );
-   KdtreeBuilder.CopyCoordinates->uniform1i( "Axis", axis );
-   KdtreeBuilder.CopyCoordinates->uniform1i( "Dim", dim );
+   KdtreeBuilder.CopyCoordinates->uniform1i( CopyCoordinatesShaderGL::UNIFORM::Size, size );
+   KdtreeBuilder.CopyCoordinates->uniform1i( CopyCoordinatesShaderGL::UNIFORM::Axis, axis );
+   KdtreeBuilder.CopyCoordinates->uniform1i( CopyCoordinatesShaderGL::UNIFORM::Dim, dim );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getBuffer( axis ) );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( axis ) );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, coordinates );
@@ -421,9 +399,9 @@ void RendererGL::sortByAxis(int axis) const
    int block_num = size / KdtreeGL::SharedSize;
    if (block_num > 0) {
       glUseProgram( KdtreeBuilder.SortByBlock->getShaderProgram() );
-      KdtreeBuilder.SortByBlock->uniform1i( "Size", size );
-      KdtreeBuilder.SortByBlock->uniform1i( "Axis", axis );
-      KdtreeBuilder.SortByBlock->uniform1i( "Dim", dim );
+      KdtreeBuilder.SortByBlock->uniform1i( SortByBlockShaderGL::UNIFORM::Size, size );
+      KdtreeBuilder.SortByBlock->uniform1i( SortByBlockShaderGL::UNIFORM::Axis, axis );
+      KdtreeBuilder.SortByBlock->uniform1i( SortByBlockShaderGL::UNIFORM::Dim, dim );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, in_reference );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, in_buffer );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getReference( axis ) );
@@ -439,12 +417,12 @@ void RendererGL::sortByAxis(int axis) const
       const std::array<GLuint, 2> buffers{ Object->getBuffer( axis ), in_buffer };
       const std::array<GLuint, 2> references{ Object->getReference( axis ), in_reference };
       glUseProgram( KdtreeBuilder.SortLastBlock->getShaderProgram() );
-      KdtreeBuilder.SortLastBlock->uniform1i( "StartOffset", start_offset );
-      KdtreeBuilder.SortLastBlock->uniform1i( "Size", remained_size );
-      KdtreeBuilder.SortLastBlock->uniform1i( "Axis", axis );
-      KdtreeBuilder.SortLastBlock->uniform1i( "Dim", dim );
+      KdtreeBuilder.SortLastBlock->uniform1i( SortLastBlockShaderGL::UNIFORM::StartOffset, start_offset );
+      KdtreeBuilder.SortLastBlock->uniform1i( SortLastBlockShaderGL::UNIFORM::Size, remained_size );
+      KdtreeBuilder.SortLastBlock->uniform1i( SortLastBlockShaderGL::UNIFORM::Axis, axis );
+      KdtreeBuilder.SortLastBlock->uniform1i( SortLastBlockShaderGL::UNIFORM::Dim, dim );
       for (int sorted_size = 1; sorted_size < remained_size; sorted_size <<= 1) {
-         KdtreeBuilder.SortLastBlock->uniform1i( "SortedSize", sorted_size );
+         KdtreeBuilder.SortLastBlock->uniform1i( SortLastBlockShaderGL::UNIFORM::SortedSize, sorted_size );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, references[buffer_index ^ 1] );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, buffers[buffer_index ^ 1] );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, references[buffer_index] );
@@ -477,11 +455,11 @@ void RendererGL::sortByAxis(int axis) const
          (size - remained_threads + sorted_size * 2) / thread_num : (size - remained_threads) / thread_num;
       block_num = divideUp( total_thread_num, thread_num );
       glUseProgram( KdtreeBuilder.GenerateSampleRanks->getShaderProgram() );
-      KdtreeBuilder.GenerateSampleRanks->uniform1i( "SortedSize", sorted_size );
-      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Size", size );
-      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Axis", axis );
-      KdtreeBuilder.GenerateSampleRanks->uniform1i( "Dim", dim );
-      KdtreeBuilder.GenerateSampleRanks->uniform1i( "TotalThreadNum", total_thread_num );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( GenerateSampleRanksShaderGL::UNIFORM::SortedSize, sorted_size );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( GenerateSampleRanksShaderGL::UNIFORM::Size, size );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( GenerateSampleRanksShaderGL::UNIFORM::Axis, axis );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( GenerateSampleRanksShaderGL::UNIFORM::Dim, dim );
+      KdtreeBuilder.GenerateSampleRanks->uniform1i( GenerateSampleRanksShaderGL::UNIFORM::TotalThreadNum, total_thread_num );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftRanks() );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRightRanks() );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
@@ -491,9 +469,9 @@ void RendererGL::sortByAxis(int axis) const
       glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
       glUseProgram( KdtreeBuilder.MergeRanksAndIndices->getShaderProgram() );
-      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "SortedSize", sorted_size );
-      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "Size", size );
-      KdtreeBuilder.MergeRanksAndIndices->uniform1i( "TotalThreadNum", total_thread_num );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( MergeRanksAndIndicesShaderGL::UNIFORM::SortedSize, sorted_size );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( MergeRanksAndIndicesShaderGL::UNIFORM::Size, size );
+      KdtreeBuilder.MergeRanksAndIndices->uniform1i( MergeRanksAndIndicesShaderGL::UNIFORM::TotalThreadNum, total_thread_num );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getLeftLimits() );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftRanks() );
       glDispatchCompute( block_num, 1, 1 );
@@ -506,10 +484,10 @@ void RendererGL::sortByAxis(int axis) const
       const int merge_pairs = remained_threads > sorted_size ?
          divideUp( size, KdtreeGL::SampleStride ) : (size - remained_threads) / KdtreeGL::SampleStride;
       glUseProgram( KdtreeBuilder.MergeReferences->getShaderProgram() );
-      KdtreeBuilder.MergeReferences->uniform1i( "SortedSize", sorted_size );
-      KdtreeBuilder.MergeReferences->uniform1i( "Size", size );
-      KdtreeBuilder.MergeReferences->uniform1i( "Axis", axis );
-      KdtreeBuilder.MergeReferences->uniform1i( "Dim", dim );
+      KdtreeBuilder.MergeReferences->uniform1i( MergeReferencesShaderGL::UNIFORM::SortedSize, sorted_size );
+      KdtreeBuilder.MergeReferences->uniform1i( MergeReferencesShaderGL::UNIFORM::Size, size );
+      KdtreeBuilder.MergeReferences->uniform1i( MergeReferencesShaderGL::UNIFORM::Axis, axis );
+      KdtreeBuilder.MergeReferences->uniform1i( MergeReferencesShaderGL::UNIFORM::Dim, dim );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, out_reference );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, out_buffer );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, in_reference );
@@ -557,10 +535,10 @@ void RendererGL::removeDuplicates(int axis) const
    const GLuint num_after_removal = Object->addCustomBufferObject<int>( "NumAfterRemoval", 1 );
    const GLuint unique_num_in_warp = Object->addCustomBufferObject<int>( "UniqueNumInWarp", segment );
    glUseProgram( KdtreeBuilder.RemoveDuplicates->getShaderProgram() );
-   KdtreeBuilder.RemoveDuplicates->uniform1i( "SizePerWarp", size_per_warp );
-   KdtreeBuilder.RemoveDuplicates->uniform1i( "Size", size );
-   KdtreeBuilder.RemoveDuplicates->uniform1i( "Axis", axis );
-   KdtreeBuilder.RemoveDuplicates->uniform1i( "Dim", dim );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::SizePerWarp, size_per_warp );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::Size, size );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::Axis, axis );
+   KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::Dim, dim );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, unique_num_in_warp );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSortReference() );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getSortBuffer() );
@@ -571,8 +549,8 @@ void RendererGL::removeDuplicates(int axis) const
    glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
    glUseProgram( KdtreeBuilder.RemoveGaps->getShaderProgram() );
-   KdtreeBuilder.RemoveGaps->uniform1i( "SizePerWarp", size_per_warp );
-   KdtreeBuilder.RemoveGaps->uniform1i( "Size", size );
+   KdtreeBuilder.RemoveGaps->uniform1i( RemoveGapsShaderGL::UNIFORM::SizePerWarp, size_per_warp );
+   KdtreeBuilder.RemoveGaps->uniform1i( RemoveGapsShaderGL::UNIFORM::Size, size );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( target_index ) );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getBuffer( target_index ) );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getSortReference() );
@@ -593,7 +571,7 @@ void RendererGL::removeDuplicates(int axis) const
 void RendererGL::sort() const
 {
    Object->prepareSorting();
-   KdtreeBuilder.InitializeReference->uniform1i( "Size", Object->getSize() );
+   KdtreeBuilder.InitializeReference->uniform1i( InitializeReferenceShaderGL::UNIFORM::Size, Object->getSize() );
    for (int axis = 0; axis < Object->getDimension(); ++axis) {
       glUseProgram( KdtreeBuilder.InitializeReference->getShaderProgram() );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( axis ) );
@@ -626,11 +604,11 @@ void RendererGL::partitionDimension(int axis, int depth) const
          int r = i + axis;
          r = r < dim ? r : r - dim;
          glUseProgram( KdtreeBuilder.Partition->getShaderProgram() );
-         KdtreeBuilder.Partition->uniform1i( "Start", 0 );
-         KdtreeBuilder.Partition->uniform1i( "End", size - 1 );
-         KdtreeBuilder.Partition->uniform1i( "Axis", axis );
-         KdtreeBuilder.Partition->uniform1i( "Dim", dim );
-         KdtreeBuilder.Partition->uniform1i( "Depth", depth );
+         KdtreeBuilder.Partition->uniform1i( PartitionShaderGL::UNIFORM::Start, 0 );
+         KdtreeBuilder.Partition->uniform1i( PartitionShaderGL::UNIFORM::End, size - 1 );
+         KdtreeBuilder.Partition->uniform1i( PartitionShaderGL::UNIFORM::Axis, axis );
+         KdtreeBuilder.Partition->uniform1i( PartitionShaderGL::UNIFORM::Dim, dim );
+         KdtreeBuilder.Partition->uniform1i( PartitionShaderGL::UNIFORM::Depth, depth );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getLeftChildNumInWarp() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getRightChildNumInWarp() );
@@ -645,9 +623,9 @@ void RendererGL::partitionDimension(int axis, int depth) const
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
          glUseProgram( KdtreeBuilder.RemovePartitionGaps->getShaderProgram() );
-         KdtreeBuilder.RemovePartitionGaps->uniform1i( "Start", 0 );
-         KdtreeBuilder.RemovePartitionGaps->uniform1i( "End", size - 1 );
-         KdtreeBuilder.RemovePartitionGaps->uniform1i( "Depth", depth );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( RemovePartitionGapsShaderGL::UNIFORM::Start, 0 );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( RemovePartitionGapsShaderGL::UNIFORM::End, size - 1 );
+         KdtreeBuilder.RemovePartitionGaps->uniform1i( RemovePartitionGapsShaderGL::UNIFORM::Depth, depth );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( r ) );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getReference( dim + 1 ) );
@@ -662,12 +640,12 @@ void RendererGL::partitionDimension(int axis, int depth) const
          int r = i + axis;
          r = r < dim ? r : r - dim;
          glUseProgram( KdtreeBuilder.SmallPartition->getShaderProgram() );
-         KdtreeBuilder.SmallPartition->uniform1i( "Start", 0 );
-         KdtreeBuilder.SmallPartition->uniform1i( "End", size - 1 );
-         KdtreeBuilder.SmallPartition->uniform1i( "Axis", axis );
-         KdtreeBuilder.SmallPartition->uniform1i( "Dim", dim );
-         KdtreeBuilder.SmallPartition->uniform1i( "Depth", depth );
-         KdtreeBuilder.SmallPartition->uniform1i( "MaxControllableDepthForWarp", max_controllable_depth_for_warp );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::Start, 0 );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::End, size - 1 );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::Axis, axis );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::Dim, dim );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::Depth, depth );
+         KdtreeBuilder.SmallPartition->uniform1i( SmallPartitionShaderGL::UNIFORM::MaxControllableDepthForWarp, max_controllable_depth_for_warp );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, mid_reference );
@@ -679,7 +657,7 @@ void RendererGL::partitionDimension(int axis, int depth) const
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
          glUseProgram( KdtreeBuilder.CopyReference->getShaderProgram() );
-         KdtreeBuilder.CopyReference->uniform1i( "Size", size );
+         KdtreeBuilder.CopyReference->uniform1i( CopyReferenceShaderGL::UNIFORM::Size, size );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getReference( r ) );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getReference( dim ) );
          glDispatchCompute( block_num, 1, 1 );
@@ -722,11 +700,11 @@ void RendererGL::build() const
       }
 
       glUseProgram( KdtreeBuilder.PartitionFinal->getShaderProgram() );
-      KdtreeBuilder.PartitionFinal->uniform1i( "Start", start );
-      KdtreeBuilder.PartitionFinal->uniform1i( "End", end );
-      KdtreeBuilder.PartitionFinal->uniform1i( "Depth", (depth - 1) - loop_levels );
-      KdtreeBuilder.PartitionFinal->uniform1i( "MidReferenceOffset", loop * warp_num );
-      KdtreeBuilder.PartitionFinal->uniform1i( "LastMidReferenceOffset", loop * warp_num / 2 );
+      KdtreeBuilder.PartitionFinal->uniform1i( PartitionFinalShaderGL::UNIFORM::Start, start );
+      KdtreeBuilder.PartitionFinal->uniform1i( PartitionFinalShaderGL::UNIFORM::End, end );
+      KdtreeBuilder.PartitionFinal->uniform1i( PartitionFinalShaderGL::UNIFORM::Depth, (depth - 1) - loop_levels );
+      KdtreeBuilder.PartitionFinal->uniform1i( PartitionFinalShaderGL::UNIFORM::MidReferenceOffset, loop * warp_num );
+      KdtreeBuilder.PartitionFinal->uniform1i( PartitionFinalShaderGL::UNIFORM::LastMidReferenceOffset, loop * warp_num / 2 );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, mid_reference );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, last_mid_reference );
@@ -750,7 +728,7 @@ void RendererGL::verify() const
       const int block_num = std::clamp( needed_threads / KdtreeGL::ThreadNum, 1, KdtreeGL::ThreadBlockNum );
       child = Object->getMidReferences( i & 1 );
       next_child = Object->getMidReferences( (i + 1) & 1 );
-      KdtreeBuilder.Verify->uniform1i( "Size", needed_threads );
+      KdtreeBuilder.Verify->uniform1i( VerifyShaderGL::UNIFORM::Size, needed_threads );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, node_sums );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, next_child );
       glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, child );
@@ -775,7 +753,7 @@ void RendererGL::buildKdtree() const
 {
    Object->initialize();
    glUseProgram( KdtreeBuilder.Initialize->getShaderProgram() );
-   KdtreeBuilder.Initialize->uniform1i( "Size", Object->getSize() );
+   KdtreeBuilder.Initialize->uniform1i( InitializeShaderGL::UNIFORM::Size, Object->getSize() );
    glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getRoot() );
    glDispatchCompute( KdtreeGL::ThreadBlockNum, 1, 1 );
    glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
@@ -838,11 +816,11 @@ void RendererGL::search()
          Object->prepareSearching( { query } );
          const int block_num = divideUp( query_num, KdtreeGL::WarpSize );
          glUseProgram( KdtreeBuilder.Search->getShaderProgram() );
-         KdtreeBuilder.Search->uniform1f( "SearchRadius", SearchRadius );
-         KdtreeBuilder.Search->uniform1i( "NodeIndex", Object->getRootNode() );
-         KdtreeBuilder.Search->uniform1i( "QueryNum", query_num );
-         KdtreeBuilder.Search->uniform1i( "Size", Object->getUniqueNum() );
-         KdtreeBuilder.Search->uniform1i( "Dim", Object->getDimension() );
+         KdtreeBuilder.Search->uniform1f( SearchShaderGL::UNIFORM::SearchRadius, SearchRadius );
+         KdtreeBuilder.Search->uniform1i( SearchShaderGL::UNIFORM::NodeIndex, Object->getRootNode() );
+         KdtreeBuilder.Search->uniform1i( SearchShaderGL::UNIFORM::QueryNum, query_num );
+         KdtreeBuilder.Search->uniform1i( SearchShaderGL::UNIFORM::Size, Object->getUniqueNum() );
+         KdtreeBuilder.Search->uniform1i( SearchShaderGL::UNIFORM::Dim, Object->getDimension() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchListLengths() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getRoot() );
@@ -894,18 +872,18 @@ void RendererGL::findNearestNeighbors()
          Object->prepareKNN( { query }, NeighborNum );
          const int block_num = divideUp( query_num, KdtreeGL::WarpSize );
          glUseProgram( KdtreeBuilder.InitializeKNN->getShaderProgram() );
-         KdtreeBuilder.InitializeKNN->uniform1i( "QueryNum", query_num );
-         KdtreeBuilder.InitializeKNN->uniform1i( "NeighborNum", NeighborNum );
+         KdtreeBuilder.InitializeKNN->uniform1i( InitializeKNNShaderGL::UNIFORM::QueryNum, query_num );
+         KdtreeBuilder.InitializeKNN->uniform1i( InitializeKNNShaderGL::UNIFORM::NeighborNum, NeighborNum );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
          glDispatchCompute( block_num, 1, 1 );
          glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
 
          glUseProgram( KdtreeBuilder.FindNearestNeighbors->getShaderProgram() );
-         KdtreeBuilder.FindNearestNeighbors->uniform1i( "NodeIndex", Object->getRootNode() );
-         KdtreeBuilder.FindNearestNeighbors->uniform1i( "QueryNum", query_num );
-         KdtreeBuilder.FindNearestNeighbors->uniform1i( "NeighborNum", NeighborNum );
-         KdtreeBuilder.FindNearestNeighbors->uniform1i( "Size", Object->getUniqueNum() );
-         KdtreeBuilder.FindNearestNeighbors->uniform1i( "Dim", Object->getDimension() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( FindNearestNeighborsShaderGL::UNIFORM::NodeIndex, Object->getRootNode() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( FindNearestNeighborsShaderGL::UNIFORM::QueryNum, query_num );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( FindNearestNeighborsShaderGL::UNIFORM::NeighborNum, NeighborNum );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( FindNearestNeighborsShaderGL::UNIFORM::Size, Object->getUniqueNum() );
+         KdtreeBuilder.FindNearestNeighbors->uniform1i( FindNearestNeighborsShaderGL::UNIFORM::Dim, Object->getDimension() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, Object->getSearchLists() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getRoot() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getCoordinates() );
@@ -918,7 +896,7 @@ void RendererGL::findNearestNeighbors()
          assert( query_num == 1 && FoundPointNum + 1 <= FoundPoints->getVertexNum() );
 
          glUseProgram( KdtreeBuilder.CopyEncodedFoundPoints->getShaderProgram() );
-         KdtreeBuilder.CopyEncodedFoundPoints->uniform1i( "NeighborNum", NeighborNum );
+         KdtreeBuilder.CopyEncodedFoundPoints->uniform1i( CopyEncodedFoundPointsShaderGL::UNIFORM::NeighborNum, NeighborNum );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 0, FoundPoints->getVBO() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 1, Object->getSearchLists() );
          glBindBufferBase( GL_SHADER_STORAGE_BUFFER, 2, Object->getCoordinates() );

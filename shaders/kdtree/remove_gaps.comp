@@ -10,8 +10,8 @@ layout (binding = 3, std430) buffer InBuffer { float source_buffer[]; };
 layout (binding = 4, std430) buffer UniqueNumInWarp { int unique_num_in_warp[]; };
 layout (binding = 5, std430) buffer NumAfterRemoval { int num_after_removal; };
 
-uniform int SizePerWarp;
-uniform int Size;
+layout (location = 0) uniform int SizePerWarp;
+layout (location = 1) uniform int Size;
 const int WarpSize = 32;
 
 void main()

@@ -7,7 +7,7 @@ layout (binding = 1, std430) buffer Lists { uint lists[]; };
 layout (binding = 2, std430) buffer Coordinates { float coordinates[]; };
 layout (binding = 3, std430) buffer Queries { float queries[]; };
 
-uniform int NeighborNum;
+layout (location = 0) uniform int NeighborNum;
 const int Dim = 3;
 
 void main()
