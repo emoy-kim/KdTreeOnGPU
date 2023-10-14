@@ -63,7 +63,6 @@ public:
    [[nodiscard]] GLuint getSearchLists() const { return Search.Lists; }
    [[nodiscard]] GLuint getSearchListLengths() const { return Search.ListLengths; }
    [[nodiscard]] GLuint getQueries() const { return Search.Queries; }
-   [[nodiscard]] const std::vector<glm::vec3>& getVertices() const { return Vertices; }
 
 private:
    struct SortGL
