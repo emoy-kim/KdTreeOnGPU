@@ -114,9 +114,6 @@ void KdtreeGL::releaseBuilding()
    for (int i = 0; i <= Dim + 1; ++i) {
       releaseCustomBuffer( Reference[i] );
    }
-   for (int i = 0; i <= Dim + 1; ++i) {
-      releaseCustomBuffer( Buffer[i] );
-   }
 }
 
 void KdtreeGL::prepareVerifying()
