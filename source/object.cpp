@@ -201,9 +201,9 @@ void ObjectGL::setObject(GLenum draw_mode, const std::vector<glm::vec3>& vertice
    VerticesCount = 0;
    DataBuffer.clear();
    for (auto& vertex : vertices) {
-      DataBuffer.push_back( vertex.x );
-      DataBuffer.push_back( vertex.y );
-      DataBuffer.push_back( vertex.z );
+      DataBuffer.emplace_back( vertex.x );
+      DataBuffer.emplace_back( vertex.y );
+      DataBuffer.emplace_back( vertex.z );
       VerticesCount++;
    }
    const int n_bytes_per_vertex = 3 * sizeof( GLfloat );
@@ -220,12 +220,12 @@ void ObjectGL::setObject(
    VerticesCount = 0;
    DataBuffer.clear();
    for (size_t i = 0; i < vertices.size(); ++i) {
-      DataBuffer.push_back( vertices[i].x );
-      DataBuffer.push_back( vertices[i].y );
-      DataBuffer.push_back( vertices[i].z );
-      DataBuffer.push_back( normals[i].x );
-      DataBuffer.push_back( normals[i].y );
-      DataBuffer.push_back( normals[i].z );
+      DataBuffer.emplace_back( vertices[i].x );
+      DataBuffer.emplace_back( vertices[i].y );
+      DataBuffer.emplace_back( vertices[i].z );
+      DataBuffer.emplace_back( normals[i].x );
+      DataBuffer.emplace_back( normals[i].y );
+      DataBuffer.emplace_back( normals[i].z );
       VerticesCount++;
    }
    const int n_bytes_per_vertex = 6 * sizeof( GLfloat );
@@ -244,14 +244,14 @@ void ObjectGL::setObject(
    VerticesCount = 0;
    DataBuffer.clear();
    for (size_t i = 0; i < vertices.size(); ++i) {
-      DataBuffer.push_back( vertices[i].x );
-      DataBuffer.push_back( vertices[i].y );
-      DataBuffer.push_back( vertices[i].z );
-      DataBuffer.push_back( normals[i].x );
-      DataBuffer.push_back( normals[i].y );
-      DataBuffer.push_back( normals[i].z );
-      DataBuffer.push_back( textures[i].x );
-      DataBuffer.push_back( textures[i].y );
+      DataBuffer.emplace_back( vertices[i].x );
+      DataBuffer.emplace_back( vertices[i].y );
+      DataBuffer.emplace_back( vertices[i].z );
+      DataBuffer.emplace_back( normals[i].x );
+      DataBuffer.emplace_back( normals[i].y );
+      DataBuffer.emplace_back( normals[i].z );
+      DataBuffer.emplace_back( textures[i].x );
+      DataBuffer.emplace_back( textures[i].y );
       VerticesCount++;
    }
    const int n_bytes_per_vertex = 8 * sizeof( GLfloat );
@@ -365,17 +365,17 @@ void ObjectGL::setObject(GLenum draw_mode, const std::string& obj_file_path)
    const bool normals_exist = !normals.empty();
    const bool textures_exist = !textures.empty();
    for (uint i = 0; i < vertices.size(); ++i) {
-      DataBuffer.push_back( vertices[i].x );
-      DataBuffer.push_back( vertices[i].y );
-      DataBuffer.push_back( vertices[i].z );
+      DataBuffer.emplace_back( vertices[i].x );
+      DataBuffer.emplace_back( vertices[i].y );
+      DataBuffer.emplace_back( vertices[i].z );
       if (normals_exist) {
-         DataBuffer.push_back( normals[i].x );
-         DataBuffer.push_back( normals[i].y );
-         DataBuffer.push_back( normals[i].z );
+         DataBuffer.emplace_back( normals[i].x );
+         DataBuffer.emplace_back( normals[i].y );
+         DataBuffer.emplace_back( normals[i].z );
       }
       if (textures_exist) {
-         DataBuffer.push_back( textures[i].x );
-         DataBuffer.push_back( textures[i].y );
+         DataBuffer.emplace_back( textures[i].x );
+         DataBuffer.emplace_back( textures[i].y );
       }
       VerticesCount++;
    }
