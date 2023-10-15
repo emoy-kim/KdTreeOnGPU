@@ -16,7 +16,7 @@ ObjectGL::~ObjectGL()
       if (texture_id != 0) glDeleteTextures( 1, &texture_id );
    }
    for (const auto& buffer : CustomBuffers) {
-      if (buffer.second != 0) glDeleteBuffers( 1, &buffer.second );
+      if (buffer != 0) glDeleteBuffers( 1, &buffer );
    }
 }
 

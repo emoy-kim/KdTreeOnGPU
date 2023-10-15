@@ -47,12 +47,13 @@ public:
    int addTexture(const uint8_t* image_buffer, int width, int height, bool is_grayscale = false);
    void replaceVertices(const std::vector<glm::vec3>& vertices, bool normals_exist, bool textures_exist);
    void replaceVertices(const std::vector<float>& vertices, bool normals_exist, bool textures_exist);
-   void releaseCustomBuffer(const std::string& name)
+   void releaseCustomBuffer(GLuint& id)
    {
-      const auto it = CustomBuffers.find( name );
+      const auto it = std::find_if( CustomBuffers.begin(), CustomBuffers.end(), [id](auto v) { return id == v; } );
       if (it != CustomBuffers.end()) {
-         glDeleteBuffers( 1, &it->second );
+         glDeleteBuffers( 1, &(*it) );
          CustomBuffers.erase( it );
+         id = 0;
       }
    }
    [[nodiscard]] GLuint getVAO() const { return VAO; }
@@ -70,12 +71,12 @@ public:
    [[nodiscard]] float getSpecularReflectionExponent() const { return SpecularReflectionExponent; }
 
    template<typename T>
-   [[nodiscard]] GLuint addCustomBufferObject(const std::string& name, int data_size)
+   [[nodiscard]] GLuint addCustomBufferObject(int data_size)
    {
       GLuint buffer = 0;
       glCreateBuffers( 1, &buffer );
       glNamedBufferStorage( buffer, sizeof( T ) * data_size, nullptr, GL_DYNAMIC_STORAGE_BIT );
-      CustomBuffers[name] = buffer;
+      CustomBuffers.emplace_back( buffer );
       return buffer;
    }
 
@@ -88,7 +89,7 @@ protected:
    std::vector<GLuint> TextureID;
    std::vector<GLfloat> DataBuffer;
    std::vector<GLuint> IndexBuffer;
-   std::map<std::string, GLuint> CustomBuffers;
+   std::vector<GLuint> CustomBuffers;
    glm::vec4 EmissionColor;
    glm::vec4 AmbientReflectionColor; // It is usually set to the same color with DiffuseReflectionColor.
                                      // Otherwise, it should be in balance with DiffuseReflectionColor.

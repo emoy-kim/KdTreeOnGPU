@@ -532,8 +532,8 @@ void RendererGL::removeDuplicates(int axis) const
    constexpr int segment = total_thread_num / KdtreeGL::WarpSize;
    const int size_per_warp = divideUp( size, segment );
    const GLuint coordinates = Object->getCoordinates();
-   const GLuint num_after_removal = Object->addCustomBufferObject<int>( "NumAfterRemoval", 1 );
-   const GLuint unique_num_in_warp = Object->addCustomBufferObject<int>( "UniqueNumInWarp", segment );
+   GLuint num_after_removal = Object->addCustomBufferObject<int>( 1 );
+   GLuint unique_num_in_warp = Object->addCustomBufferObject<int>( segment );
    glUseProgram( KdtreeBuilder.RemoveDuplicates->getShaderProgram() );
    KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::SizePerWarp, size_per_warp );
    KdtreeBuilder.RemoveDuplicates->uniform1i( RemoveDuplicatesShaderGL::UNIFORM::Size, size );
@@ -564,8 +564,8 @@ void RendererGL::removeDuplicates(int axis) const
    glGetNamedBufferSubData( num_after_removal, 0, sizeof( int ), &num );
    Object->setUniqueNum( num );
 
-   Object->releaseCustomBuffer( "NumAfterRemoval" );
-   Object->releaseCustomBuffer( "UniqueNumInWarp" );
+   Object->releaseCustomBuffer( num_after_removal );
+   Object->releaseCustomBuffer( unique_num_in_warp );
 }
 
 void RendererGL::sort() const
