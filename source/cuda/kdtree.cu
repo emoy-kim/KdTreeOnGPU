@@ -53,7 +53,7 @@ namespace cuda
       if( device_num <= 0 ) throw std::runtime_error( "cuda device not found\n" );
 
       Device.ID = 0;
-      Device.Buffer.resize( Dim + 2, nullptr );
+      Device.Buffer.resize( Dim + 1, nullptr );
       Device.Reference.resize( Dim + 2, nullptr );
 
       CHECK_CUDA( cudaSetDevice( Device.ID ) );
