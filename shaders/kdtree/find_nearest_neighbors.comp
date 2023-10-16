@@ -42,7 +42,7 @@ float push(in int list_offset, in int node_index, in float squared_distance)
       encoded_distance = max_distance;
       encoded_index = max_index;
    }
-   return uintBitsToFloat( uint(lists[list_offset + (NeighborNum - 1) * 2] >> 32) );
+   return uintBitsToFloat( uint(lists[list_offset + (NeighborNum - 1) * 2]) );
 }
 
 void findNearestNeighbors(in int list_offset, in int query_offset)
