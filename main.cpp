@@ -101,7 +101,7 @@ void testCUDA(
    }
    std::cout << ">> Total Search Time: " << search_time << " sec.\n";
 
-   std::vector<std::vector<std::pair<float,int>>> nn_founds;
+   std::vector<std::vector<std::pair<float, int>>> nn_founds;
    start_time = std::chrono::steady_clock::now();
    kdtree.findNearestNeighbors(
       nn_founds, glm::value_ptr( queries[0] ), static_cast<int>(queries.size()), NeighborNum
