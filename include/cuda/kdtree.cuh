@@ -27,7 +27,7 @@ do { \
 } while(0)
 #define CHECK_KERNEL \
 do { \
-   if ((cudaGetLastError()) == cudaSuccess) ; \
+   if ((cudaPeekAtLastError()) == cudaSuccess) ; \
    else { \
       std::ostringstream buffer; \
       buffer << "CUDA KERNEL ERROR CODE: " << (cudaGetLastError()) << "\n"; \
