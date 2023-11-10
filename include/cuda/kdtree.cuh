@@ -12,10 +12,6 @@
 #include <chrono>
 #include <cuda_runtime.h>
 
-#ifdef NDEBUG
-#define CHECK_CUDA(cu_result) (static_cast<void>(0))
-#define CHECK_KERNEL
-#else
 #define CHECK_CUDA(cu_result) \
 do { \
    if ((cu_result) == cudaSuccess) ; \
@@ -34,7 +30,6 @@ do { \
       throw std::runtime_error( buffer.str() ); \
    } \
 } while(0)
-#endif
 
 using node_type = float;
 
